@@ -1,0 +1,11 @@
+{
+  "name": "@gitflow/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

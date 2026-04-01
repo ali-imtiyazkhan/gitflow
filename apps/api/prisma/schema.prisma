@@ -1,0 +1,21 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Conflict {
+  id            String   @id @default(uuid())
+  owner         String
+  repo          String
+  sourceBranch  String
+  targetBranch  String
+  status        String   @default("open") // open, resolved, aborted
+  hunks         Json     // Array of ConflictHunk objects
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([owner, repo])
+}
