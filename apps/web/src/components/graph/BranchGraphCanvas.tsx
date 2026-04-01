@@ -1,6 +1,4 @@
-'use client';
-
-import { useCallback, useMemo, useEffect } from 'react';
+import { useCallback, useMemo, useEffect, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -15,8 +13,10 @@ import {
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, GitBranch, GitCommit, Layers, MoreHorizontal } from 'lucide-react';
+import { clsx } from 'clsx';
 import { BranchNode } from './BranchNode';
+import { CommitNode } from './CommitNode';
 import { useBranchGraph } from '@/hooks/useBranchGraph';
 import { useMerge } from '@/hooks/useMerge';
 import { deleteBranch } from '@/lib/apiClient';
@@ -25,7 +25,10 @@ import { useSocket } from '@/hooks/useSocket';
 import type { Branch } from '@gitflow/shared';
 import { GRAPH_DEFAULTS } from '@gitflow/shared';
 
-const NODE_TYPES = { branch: BranchNode };
+const NODE_TYPES = { 
+  branch: BranchNode,
+  commit: CommitNode
+};
 
 interface BranchGraphCanvasProps {
   owner: string;
@@ -34,7 +37,8 @@ interface BranchGraphCanvasProps {
 }
 
 export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
-  const { isLoading, error, branches, graph, refresh } = useBranchGraph(owner, repo);
+  const [view, setView] = useState<'branch' | 'commit'>('branch');
+  const { isLoading, error, branches, graph, refresh } = useBranchGraph(owner, repo, view);
   const { triggerMerge } = useMerge(owner, repo);
   const { selectBranch, updateNodePosition } = useGraphStore();
 
@@ -73,23 +77,32 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
 
   // Convert domain branches → React Flow nodes
   const initialNodes = useMemo<Node[]>(() =>
-    branches.map((b: Branch, i: number) => {
-      const graphNode = graph.nodes.find((n) => n.branchId === b.id);
-      return {
-        id: b.id,
-        type: 'branch',
-        data: {
-          ...b,
-          onDelete: handleDeleteBranch,
-        } as any,
-        position: graphNode
-          ? { x: graphNode.x, y: graphNode.y }
-          : {
-              x: GRAPH_DEFAULTS.CANVAS_PADDING + (i % 3) * (GRAPH_DEFAULTS.NODE_WIDTH + GRAPH_DEFAULTS.H_GAP),
-              y: GRAPH_DEFAULTS.CANVAS_PADDING + Math.floor(i / 3) * (GRAPH_DEFAULTS.NODE_HEIGHT + GRAPH_DEFAULTS.V_GAP),
-            },
-        draggable: true,
-      };
+    graph.nodes.map((n) => {
+      if (n.type === 'branch') {
+        const branch = branches.find((b) => b.id === n.branchId);
+        return {
+          id: n.id,
+          type: 'branch',
+          data: {
+            ...branch,
+            onDelete: handleDeleteBranch,
+          },
+          position: { x: n.x, y: n.y },
+          draggable: true,
+        };
+      } else {
+        return {
+          id: n.id,
+          type: 'commit',
+          data: {
+            ...n.data,
+            commitSha: n.commitSha,
+            isHead: branches.some(b => b.sha === n.commitSha),
+          },
+          position: { x: n.x, y: n.y },
+          draggable: true,
+        };
+      }
     }),
     [branches, graph.nodes, handleDeleteBranch]
   );
@@ -98,10 +111,14 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
   const initialEdges = useMemo<Edge[]>(() =>
     graph.edges.map((e) => ({
       id: e.id,
-      source: e.fromBranchId,
-      target: e.toBranchId,
-      animated: e.type === 'merge-into',
-      style: { stroke: '#94a3b8', strokeWidth: 1.5 },
+      source: e.fromId,
+      target: e.toId,
+      animated: e.type === 'merge-into' || e.type === 'rebase-onto',
+      style: { 
+        stroke: e.type === 'branch-head' ? '#3b82f6' : '#94a3b8', 
+        strokeWidth: e.type === 'branch-head' ? 2 : 1.5,
+        strokeDasharray: e.type === 'branch-head' ? '5 5' : '0'
+      },
       type: 'smoothstep',
     })),
     [graph.edges]
@@ -222,6 +239,34 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
 
   return (
     <div className="flex-1 overflow-hidden h-full w-full relative">
+      {/* View Switcher Controls */}
+      <div className="absolute top-4 left-4 z-10 flex gap-1 rounded-xl bg-white/80 p-1 shadow-lg backdrop-blur-md dark:bg-gray-900/80">
+        <button
+          onClick={() => setView('branch')}
+          className={clsx(
+            'flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all',
+            view === 'branch' 
+              ? 'bg-gray-900 text-white shadow-md dark:bg-white dark:text-gray-900' 
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white'
+          )}
+        >
+          <GitBranch className="h-3.5 w-3.5" />
+          Branch View
+        </button>
+        <button
+          onClick={() => setView('commit')}
+          className={clsx(
+            'flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all',
+            view === 'commit' 
+              ? 'bg-gray-900 text-white shadow-md dark:bg-white dark:text-gray-900' 
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white'
+          )}
+        >
+          <GitCommit className="h-3.5 w-3.5" />
+          Commit View
+        </button>
+      </div>
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -242,7 +287,8 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
         <Controls showInteractive={false} />
         <MiniMap
           nodeColor={(node) => {
-            const b = node.data as unknown as Branch;
+            const b = node.data as any;
+            if (node.type === 'commit') return b.isHead ? '#3b82f6' : '#cbd5e1';
             if (b?.type === 'main') return '#3b82f6';
             if (b?.status === 'conflict') return '#ef4444';
             if (b?.status === 'merged') return '#8b5cf6';
@@ -255,7 +301,9 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
 
       {/* Hint overlay */}
       <div className="pointer-events-none absolute bottom-4 left-4 rounded-lg bg-white/80 px-3 py-1.5 text-xs text-gray-400 shadow backdrop-blur-sm">
-        Drag a branch handle to another branch to merge
+        {view === 'branch' 
+          ? 'Drag a branch handle to another branch to merge'
+          : 'Visualize the full granular commit history'}
       </div>
     </div>
   );

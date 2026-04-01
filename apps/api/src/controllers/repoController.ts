@@ -40,11 +40,15 @@ export class RepoController {
   async getGraph(req: Request, res: Response, next: NextFunction) {
     try {
       const { owner, repo } = req.params;
+      const { view = 'branch' } = req.query;
       const token = this.getAccessToken(req);
       const gitHubService = new GitHubService(token);
 
       const branches = await gitHubService.getRepoBranches(owner as string, repo as string);
-      const graph = await this.graphService.generateGraph(branches);
+      
+      const graph = view === 'commit' 
+        ? await this.graphService.generateCommitGraph(branches)
+        : await this.graphService.generateGraph(branches);
 
       const response: ApiResponse<any> = {
         success: true,
