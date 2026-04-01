@@ -1,13 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
 import { GitHubService } from '@/services/githubService';
 import { MergeService } from '@/services/mergeService';
-import { ApiResponse, MergeRequest, ResolveConflictRequest } from '@gitflow/shared';
+import { AIService } from '@/services/aiService';
+import { ApiResponse, MergeRequest, ResolveConflictRequest, ConflictHunk } from '@gitflow/shared';
 import { BadRequestError, NotFoundError, UnauthorizedError } from '@/utils/apiError';
 import { prisma } from '@/lib/prisma';
 import { Server } from 'socket.io';
 
 export class MergeController {
   private mergeService = new MergeService();
+  private aiService = new AIService();
 
   // Helper to get socket.io instance
   private getIO(req: Request): Server {
@@ -23,7 +25,7 @@ export class MergeController {
     return authHeader.split(' ')[1];
   }
 
-  // ─── Merge ──────────────────────────────────────────────────────────────────
+  // Merge 
 
   async startMerge(req: Request, res: Response, next: NextFunction) {
     try {
@@ -160,28 +162,90 @@ export class MergeController {
           throw new NotFoundError(`Conflict with ID ${resolveRequest.conflictId} not found`);
        }
 
-       // Update status in database
+       // 1. Actually perform the commit to GitHub
+       const token = this.getAccessToken(req);
+       const githubService = new GitHubService(token);
+       
+       const commitSha = await this.mergeService.resolveAndCommit(
+          githubService,
+          owner as string,
+          repo as string,
+          resolveRequest.conflictId,
+          resolveRequest.files,
+          conflict.sourceBranch,
+          conflict.targetBranch
+       );
+
+       // 2. Update status in database
        await prisma.conflict.update({
           where: { id: resolveRequest.conflictId },
           data: { status: 'resolved' }
        });
 
-       // Notify clients about resolution
+       // 3. Notify clients about resolution
        io.to(repoId).emit('conflict:resolved', {
           id: resolveRequest.conflictId,
           repoId,
+          commitSha,
        });
 
        const response: ApiResponse<any> = {
           success: true,
           data: {
              resolved: true,
-             message: 'Conflict resolved and broadcasted to clients',
+             commitSha,
+             message: 'Conflict resolved and committed to GitHub',
           },
        };
        res.json(response);
     } catch (err) {
        next(err);
+    }
+  }
+
+  async getAISuggestion(req: Request, res: Response, next: NextFunction) {
+    try {
+      const hunk = req.body as ConflictHunk;
+      
+      if (!hunk.oursContent || !hunk.theirsContent) {
+        throw new BadRequestError('Hunk content is required for AI suggestion');
+      }
+
+      const suggestion = await this.aiService.suggestResolution(hunk);
+      const explanation = await this.aiService.explainConflict(hunk);
+
+      const response: ApiResponse<any> = {
+        success: true,
+        data: {
+          suggestion,
+          explanation
+        }
+      };
+      res.json(response);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async analyzeMerge(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { hunks } = req.body as { hunks: ConflictHunk[] };
+      
+      if (!hunks || hunks.length === 0) {
+        throw new BadRequestError('At least one conflict hunk is required for analysis');
+      }
+
+      const analysis = await this.aiService.analyzeAllConflicts(hunks);
+
+      const response: ApiResponse<any> = {
+        success: true,
+        data: {
+          analysis
+        }
+      };
+      res.json(response);
+    } catch (err) {
+      next(err);
     }
   }
 }

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Branch, MergeRequest, ResolveConflictRequest, ApiResponse, MergeConflict, BranchGraph } from '@gitflow/shared';
+import type { Branch, MergeRequest, ResolveConflictRequest, ApiResponse, MergeConflict, BranchGraph, ConflictHunk } from '@gitflow/shared';
 
 const apiClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000',
@@ -11,8 +11,6 @@ const apiClient = axios.create({
 export function setAuthToken(token: string) {
   apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 }
-
-// â”€â”€â”€ Branches â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function fetchBranches(owner: string, repo: string): Promise<Branch[]> {
   const res = await apiClient.get<ApiResponse<Branch[]>>(
@@ -84,6 +82,32 @@ export async function resolveConflict(
     request
   );
   if (!res.data.success) throw new Error(res.data.error?.message ?? 'Failed to resolve conflict');
+}
+
+export async function fetchAISuggestion(
+  owner: string,
+  repo: string,
+  hunk: ConflictHunk
+): Promise<{ suggestion: string; explanation: string }> {
+  const res = await apiClient.post<ApiResponse<{ suggestion: string; explanation: string }>>(
+    `/api/v1/repos/${owner}/${repo}/conflicts/ai-suggestion`,
+    hunk
+  );
+  if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'AI failed');
+  return res.data.data;
+}
+
+export async function fetchGlobalAnalysis(
+  owner: string,
+  repo: string,
+  hunks: ConflictHunk[]
+): Promise<string> {
+  const res = await apiClient.post<ApiResponse<{ analysis: string }>>(
+    `/api/v1/repos/${owner}/${repo}/conflicts/analyze`,
+    { hunks }
+  );
+  if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'Analysis failed');
+  return res.data.data.analysis;
 }
 
 export default apiClient;

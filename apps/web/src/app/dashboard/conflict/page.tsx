@@ -23,6 +23,11 @@ export default function ConflictsPage() {
   const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     async function fetchConflicts() {
@@ -117,7 +122,9 @@ export default function ConflictsPage() {
               <div className="mt-8 flex items-center justify-between border-t border-gray-100 pt-6 dark:border-gray-800">
                 <div className="flex items-center gap-2 text-gray-400">
                   <Clock className="h-3.5 w-3.5" />
-                  <span className="text-[10px] font-medium">{new Date(conflict.createdAt).toLocaleDateString()}</span>
+                  <span className="text-[10px] font-medium">
+                    {mounted ? new Date(conflict.createdAt).toLocaleDateString() : 'Loading...'}
+                  </span>
                 </div>
                 <Link
                   href={`/dashboard/repo/${conflict.owner}/${conflict.repo}`}

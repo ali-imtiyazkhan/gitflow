@@ -2,17 +2,23 @@
 
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Check, ChevronDown, ChevronUp, Copy, Split } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Copy, Split, Sparkles, Loader2 } from 'lucide-react';
 import { useGraphStore } from '@/store/graphStore';
+import { useMerge } from '@/hooks/useMerge';
 import type { ConflictHunk } from '@gitflow/shared';
 
 interface HunkResolverProps {
   hunk: ConflictHunk;
   conflictId: string;
+  owner: string;
+  repo: string;
 }
 
-export function HunkResolver({ hunk, conflictId }: HunkResolverProps) {
+export function HunkResolver({ hunk, conflictId, owner, repo }: HunkResolverProps) {
   const { resolveHunk } = useGraphStore();
+  const { getAISuggestion } = useMerge(owner, repo);
+  const [isAILoading, setIsAILoading] = useState(false);
+  const [explanation, setExplanation] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
   const [manualContent, setManualContent] = useState(
     `<<<<<<< Current\n${hunk.oursContent}\n=======\n${hunk.theirsContent}\n>>>>>>> Incoming`
@@ -23,8 +29,26 @@ export function HunkResolver({ hunk, conflictId }: HunkResolverProps) {
     let finalContent = content;
     if (strategy === 'both') {
       finalContent = `${hunk.oursContent}\n${hunk.theirsContent}`;
+    } else if (strategy === 'ours') {
+      finalContent = hunk.oursContent;
+    } else if (strategy === 'theirs') {
+      finalContent = hunk.theirsContent;
     }
     resolveHunk(conflictId, hunk.id, strategy, finalContent);
+  };
+
+  const handleAISuggest = async () => {
+    setIsAILoading(true);
+    try {
+      const { suggestion, explanation: aiExplain } = await getAISuggestion(hunk);
+      setManualContent(suggestion);
+      setExplanation(aiExplain);
+      setShowManual(true);
+    } catch (err) {
+      console.error('AI suggestion failed', err);
+    } finally {
+      setIsAILoading(false);
+    }
   };
 
   const lines = useMemo(() => {
@@ -140,7 +164,26 @@ export function HunkResolver({ hunk, conflictId }: HunkResolverProps) {
                   <Split className="h-3.5 w-3.5" />
                   Manual Resolve
                 </button>
+                <button
+                  onClick={handleAISuggest}
+                  disabled={isAILoading}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-xs font-semibold text-purple-700 shadow-sm hover:bg-purple-100 transition-all active:scale-[0.98] disabled:opacity-50"
+                  title="Analyze and Resolve with AI"
+                >
+                  {isAILoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  AI Analysis & Resolve
+                </button>
               </div>
+
+              {explanation && (
+                 <div className="rounded-lg bg-amber-50 border border-amber-100 p-3 text-[11px] text-amber-900 animate-in fade-in slide-in-from-top-1">
+                    <div className="flex items-center gap-1.5 mb-1 font-bold">
+                       <Sparkles className="h-3 w-3" />
+                       AI Analysis
+                    </div>
+                    {explanation}
+                 </div>
+              )}
 
               {showManual && (
                 <div className="animate-in slide-in-from-bottom-2 duration-300">

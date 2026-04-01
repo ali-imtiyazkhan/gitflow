@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useGraphStore } from '@/store/graphStore';
-import { startMerge, fetchConflict } from '@/lib/apiClient';
+import { startMerge, fetchConflict, fetchAISuggestion, resolveConflict, fetchGlobalAnalysis } from '@/lib/apiClient';
+import type { ConflictHunk, ResolveConflictRequest } from '@gitflow/shared';
 
 export function useMerge(owner: string, repo: string) {
   const { inititateMerge, setActiveConflict, setLoading, setError } = useGraphStore();
@@ -34,5 +35,55 @@ export function useMerge(owner: string, repo: string) {
     [owner, repo, inititateMerge, setActiveConflict, setLoading, setError]
   );
 
-  return { triggerMerge };
+  const getAISuggestion = useCallback(
+    async (hunk: ConflictHunk) => {
+      setLoading(true);
+      setError(null);
+      try {
+        return await fetchAISuggestion(owner, repo, hunk);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'AI Suggestion failed');
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [owner, repo, setLoading, setError]
+  );
+
+  const resolveConflictAction = useCallback(
+    async (request: ResolveConflictRequest) => {
+      setLoading(true);
+      setError(null);
+      try {
+        await resolveConflict(owner, repo, request);
+        // Refresh graph or handle success
+        setActiveConflict(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Resolution failed');
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [owner, repo, setActiveConflict, setLoading, setError]
+  );
+
+  const analyzeMerge = useCallback(
+    async (hunks: ConflictHunk[]) => {
+      setLoading(true);
+      setError(null);
+      try {
+        return await fetchGlobalAnalysis(owner, repo, hunks);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Global analysis failed');
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [owner, repo, setLoading, setError]
+  );
+
+  return { triggerMerge, getAISuggestion, resolveConflictAction, analyzeMerge };
 }

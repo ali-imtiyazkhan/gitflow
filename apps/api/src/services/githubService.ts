@@ -136,4 +136,68 @@ export class GitHubService {
       commit_message: message,
     });
   }
+
+  // ─── Git Data API ─────────────────────────────────────────────────────────
+
+  /**
+   * Creates a multi-file commit on a target branch.
+   */
+  async createCommit(
+    owner: string,
+    repo: string,
+    branch: string,
+    message: string,
+    files: { path: string; content: string }[]
+  ): Promise<string> {
+    // 1. Get the latest commit SHA of the branch
+    const { data: refData } = await this.octokit.rest.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${branch}`,
+    });
+    const latestCommitSha = refData.object.sha;
+
+    // 2. Get the tree SHA of those commits
+    const { data: commitData } = await this.octokit.rest.git.getCommit({
+      owner,
+      repo,
+      commit_sha: latestCommitSha,
+    });
+    const baseTreeSha = commitData.tree.sha;
+
+    // 3. Create a new tree with the file modifications
+    const tree = files.map((f) => ({
+      path: f.path,
+      mode: '100644' as const, // standard file
+      type: 'blob' as const,
+      content: f.content,
+    }));
+
+    const { data: newTreeData } = await this.octokit.rest.git.createTree({
+      owner,
+      repo,
+      base_tree: baseTreeSha,
+      tree,
+    });
+
+    // 4. Create the commit
+    const { data: newCommitData } = await this.octokit.rest.git.createCommit({
+      owner,
+      repo,
+      message,
+      tree: newTreeData.sha,
+      parents: [latestCommitSha],
+    });
+
+    // 5. Update the reference
+    await this.octokit.rest.git.updateRef({
+      owner,
+      repo,
+      ref: `heads/${branch}`,
+      sha: newCommitData.sha,
+      force: false,
+    });
+
+    return newCommitData.sha;
+  }
 }

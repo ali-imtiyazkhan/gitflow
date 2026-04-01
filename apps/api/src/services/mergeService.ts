@@ -87,4 +87,28 @@ export class MergeService {
        throw err;
     }
   }
+
+  /**
+   * Resolves a conflict and commits the result to GitHub.
+   */
+  async resolveAndCommit(
+    githubService: GitHubService,
+    owner: string,
+    repo: string,
+    conflictId: string,
+    resolutions: { filePath: string; content: string }[],
+    sourceBranch: string,
+    targetBranch: string
+  ): Promise<string> {
+    const commitMessage = `Merge branch '${sourceBranch}' into ${targetBranch} (Conflict Resolved)`;
+    
+    // Create the commit on the SOURCE branch (the one we are merging FROM into the target)
+    // Wait, usually we merge SOURCE into TARGET. So the conflict is resolved on TARGET.
+    // GitHub's merge API attempts to merge HEAD into BASE.
+    // If it's a PR, the merging branch is the source.
+    // In our case, we are merging `head` into `base`. So we should commit to `base` (targetBranch) or a temporary branch.
+    // Let's assume we commit to the target branch directly for now, as is typical for a conflict resolution commit.
+    
+    return await githubService.createCommit(owner, repo, targetBranch, commitMessage, resolutions.map(r => ({ path: r.filePath, content: r.content })));
+  }
 }
