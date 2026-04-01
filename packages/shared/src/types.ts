@@ -131,7 +131,7 @@ export interface PullRequest {
   updatedAt: string;
 }
 
-// ─── API Response Types ───────────────────────────────────────────────────────
+// API Response Types 
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -188,9 +188,8 @@ export interface MergeRequest {
 
 export interface ResolveConflictRequest {
   conflictId: string;
-  hunks: Array<{
-    hunkId: string;
-    strategy: ConflictResolutionStrategy;
-    manualContent?: string;
+  files: Array<{
+    filePath: string;
+    content: string;
   }>;
 }

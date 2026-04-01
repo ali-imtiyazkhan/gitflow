@@ -4,14 +4,14 @@ import { MergeController } from '@/controllers/mergeController';
 const router = Router();
 const mergeController = new MergeController();
 
-// ─── Merge ──────────────────────────────────────────────────────────────────
+// Merge 
 
 router.post('/:owner/:repo/merge', (req, res, next) => mergeController.startMerge(req, res, next));
 
-// ─── Conflicts ──────────────────────────────────────────────────────────────
+// Conflicts 
 
 router.get('/conflicts/all', (req, res, next) => mergeController.getAllConflicts(req, res, next));
-router.get('/:owner/:repo/conflicts/:id', (req, res, next) => mergeController.getConflict(req, res, next));
-router.post('/:owner/:repo/conflicts/resolve', (req, res, next) => mergeController.resolveConflict(req, res, next));
+router.post('/:owner/:repo/conflicts/ai-suggestion', (req, res, next) => mergeController.getAISuggestion(req, res, next));
+router.post('/:owner/:repo/conflicts/analyze', (req, res, next) => mergeController.analyzeMerge(req, res, next));
 
 export default router;

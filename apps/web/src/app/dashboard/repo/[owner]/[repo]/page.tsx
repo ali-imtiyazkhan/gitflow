@@ -58,7 +58,7 @@ export default function RepoDashboardPage({ params }: PageProps) {
       {/* Side Conflict Panel */}
       {activeConflict && (
         <div className="absolute right-6 top-6 bottom-6 z-20 w-96 animate-in slide-in-from-right-4 duration-300">
-          <ConflictPanel />
+          <ConflictPanel owner={owner} repo={repo} />
         </div>
       )}
     </div>
