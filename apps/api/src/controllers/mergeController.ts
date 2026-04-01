@@ -97,7 +97,6 @@ export class MergeController {
   }
 
   // Conflicts 
-
   async getConflict(req: Request, res: Response, next: NextFunction) {
     try {
        const { id } = req.params;
@@ -119,6 +118,26 @@ export class MergeController {
        res.json(response);
     } catch (err) {
        next(err);
+    }
+  }
+
+  async getAllConflicts(req: Request, res: Response, next: NextFunction) {
+    try {
+      const conflicts = await prisma.conflict.findMany({
+        where: { status: 'open' },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const response: ApiResponse<any[]> = {
+        success: true,
+        data: conflicts.map((c: any) => ({
+          ...c,
+          files: c.hunks,
+        })),
+      };
+      res.json(response);
+    } catch (err) {
+      next(err);
     }
   }
 

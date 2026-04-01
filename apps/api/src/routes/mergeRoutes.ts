@@ -10,6 +10,7 @@ router.post('/:owner/:repo/merge', (req, res, next) => mergeController.startMerg
 
 // ─── Conflicts ──────────────────────────────────────────────────────────────
 
+router.get('/conflicts/all', (req, res, next) => mergeController.getAllConflicts(req, res, next));
 router.get('/:owner/:repo/conflicts/:id', (req, res, next) => mergeController.getConflict(req, res, next));
 router.post('/:owner/:repo/conflicts/resolve', (req, res, next) => mergeController.resolveConflict(req, res, next));
 
