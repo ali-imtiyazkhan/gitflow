@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 import type { Branch, MergeRequest, ResolveConflictRequest, ApiResponse, MergeConflict, BranchGraph } from '@gitflow/shared';
 
 const apiClient = axios.create({
@@ -56,6 +56,14 @@ export async function fetchConflict(
     `/api/v1/repos/${owner}/${repo}/conflicts/${conflictId}`
   );
   if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'Failed to fetch conflict');
+  return res.data.data;
+}
+
+export async function fetchAllConflicts(): Promise<any[]> {
+  const res = await apiClient.get<ApiResponse<any[]>>(
+    '/api/v1/repos/conflicts/all'
+  );
+  if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'Failed to fetch all conflicts');
   return res.data.data;
 }
 
