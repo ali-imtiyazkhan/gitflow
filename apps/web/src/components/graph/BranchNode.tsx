@@ -2,7 +2,7 @@
 
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { GitBranch, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { GitBranch, AlertTriangle, CheckCircle, Clock, Trash2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { Branch } from '@gitflow/shared';
 import { relativeTime, shortSha } from '@gitflow/shared';
@@ -45,10 +45,22 @@ export const BranchNode = memo(function BranchNode({ data, selected }: NodeProps
         <span className={clsx('max-w-[130px] truncate text-xs font-semibold', isMain ? 'text-gray-900' : 'text-gray-700')}>
           {branch.name}
         </span>
-        {isMain && (
+        
+        {isMain ? (
           <span className="ml-auto rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-white">
             main
           </span>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              (branch as any).onDelete?.(branch.name);
+            }}
+            className="ml-auto flex h-6 w-6 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+            title="Delete branch"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
         )}
       </div>
 

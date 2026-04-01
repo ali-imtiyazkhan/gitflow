@@ -30,7 +30,14 @@ export async function fetchBranchGraph(owner: string, repo: string): Promise<Bra
   return res.data.data;
 }
 
-// â”€â”€â”€ Merge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export async function deleteBranch(owner: string, repo: string, branchName: string): Promise<void> {
+  const res = await apiClient.delete<ApiResponse<any>>(
+    `/api/v1/repos/${owner}/${repo}/branches/${branchName}`
+  );
+  if (!res.data.success) throw new Error(res.data.error?.message ?? 'Failed to delete branch');
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 
 export async function startMerge(
   owner: string,
