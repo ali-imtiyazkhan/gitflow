@@ -35,6 +35,7 @@ export interface Commit {
   author: string;
   authorAvatar?: string;
   timestamp: string;
+  parents: string[];
   additions: number;
   deletions: number;
 }
@@ -75,18 +76,21 @@ export interface MergeConflict {
 
 export interface GraphNode {
   id: string;
-  branchId: string;
+  type: 'branch' | 'commit';
+  branchId?: string;
+  commitSha?: string;
   x: number;
   y: number;
   width: number;
   height: number;
+  data?: any;
 }
 
 export interface GraphEdge {
   id: string;
-  fromBranchId: string;
-  toBranchId: string;
-  type: 'branch-from' | 'merge-into' | 'rebase-onto';
+  fromId: string;
+  toId: string;
+  type: 'branch-head' | 'commit-parent' | 'merge-into' | 'rebase-onto';
 }
 
 export interface BranchGraph {

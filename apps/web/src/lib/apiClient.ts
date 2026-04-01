@@ -20,9 +20,10 @@ export async function fetchBranches(owner: string, repo: string): Promise<Branch
   return res.data.data;
 }
 
-export async function fetchBranchGraph(owner: string, repo: string): Promise<BranchGraph> {
+export async function fetchBranchGraph(owner: string, repo: string, view: 'branch' | 'commit' = 'branch'): Promise<BranchGraph> {
   const res = await apiClient.get<ApiResponse<BranchGraph>>(
-    `/api/v1/repos/${owner}/${repo}/graph`
+    `/api/v1/repos/${owner}/${repo}/graph`,
+    { params: { view } }
   );
   if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'Failed to fetch graph');
   return res.data.data;
@@ -50,7 +51,6 @@ export async function startMerge(
   return res.data.data;
 }
 
-// â”€â”€â”€ Conflicts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function fetchConflict(
   owner: string,

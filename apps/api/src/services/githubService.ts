@@ -60,28 +60,54 @@ export class GitHubService {
         });
 
         // Fetch latest commit details
+        const { data: latestCommitDetail } = await this.octokit.rest.git.getCommit({
+          owner,
+          repo,
+          commit_sha: detail.commit.sha,
+        });
+
         const commit: Commit = {
           sha: detail.commit.sha,
           message: detail.commit.commit.message,
           author: detail.commit.commit.author?.name || 'unknown',
           authorAvatar: (detail.commit as any).author?.avatar_url,
           timestamp: detail.commit.commit.author?.date || new Date().toISOString(),
-          additions: 0, // Requires separate call if needed
+          parents: latestCommitDetail.parents.map(p => p.sha),
+          additions: 0,
           deletions: 0,
         };
 
+        // Fetch recent history (e.g., last 20 commits for tree building)
+        const { data: commitHistory } = await this.octokit.rest.repos.listCommits({
+          owner,
+          repo,
+          sha: b.name,
+          per_page: 20,
+        });
+
+        const history: Commit[] = commitHistory.map(c => ({
+          sha: c.sha,
+          message: c.commit.message,
+          author: c.commit.author?.name || 'unknown',
+          authorAvatar: (c as any).author?.avatar_url,
+          timestamp: c.commit.author?.date || new Date().toISOString(),
+          parents: c.parents.map(p => p.sha),
+          additions: 0,
+          deletions: 0,
+        }));
+
         return {
-          id: b.name, // Using name as ID for simplicity in Git operations
+          id: b.name,
           name: b.name,
           type: inferBranchType(b.name),
-          status: 'clean' as const, // Default, updated by GraphService
+          status: 'clean' as const,
           sha: b.commit.sha,
-          aheadBy: 0, // Placeholder
-          behindBy: 0, // Placeholder
+          aheadBy: 0,
+          behindBy: 0,
           lastCommitAt: commit.timestamp,
           author: commit.author,
           authorAvatar: commit.authorAvatar,
-          commits: [commit],
+          commits: history,
           isProtected: detail.protected,
           isDraft: false,
         };
