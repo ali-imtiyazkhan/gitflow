@@ -19,6 +19,7 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 import { BranchNode } from './BranchNode';
 import { useBranchGraph } from '@/hooks/useBranchGraph';
 import { useMerge } from '@/hooks/useMerge';
+import { deleteBranch } from '@/lib/apiClient';
 import { useGraphStore } from '@/store/graphStore';
 import { useSocket } from '@/hooks/useSocket';
 import type { Branch } from '@gitflow/shared';
@@ -54,6 +55,22 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
     };
   }, [socket, refresh]);
 
+  const handleDeleteBranch = useCallback(
+    async (branchName: string) => {
+      const confirmMessage = `Are you sure you want to permanently delete the branch "${branchName}"? This action cannot be undone on GitHub.`;
+      
+      if (window.confirm(confirmMessage)) {
+        try {
+          await deleteBranch(owner, repo, branchName);
+          refresh(); // Refresh graph to remove the node
+        } catch (err: any) {
+          alert(`Failed to delete branch: ${err.message}`);
+        }
+      }
+    },
+    [owner, repo, refresh]
+  );
+
   // Convert domain branches → React Flow nodes
   const initialNodes = useMemo<Node[]>(() =>
     branches.map((b: Branch, i: number) => {
@@ -61,7 +78,10 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
       return {
         id: b.id,
         type: 'branch',
-        data: b as any,
+        data: {
+          ...b,
+          onDelete: handleDeleteBranch,
+        } as any,
         position: graphNode
           ? { x: graphNode.x, y: graphNode.y }
           : {
@@ -71,7 +91,7 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
         draggable: true,
       };
     }),
-    [branches, graph.nodes]
+    [branches, graph.nodes, handleDeleteBranch]
   );
 
   // Convert domain edges → React Flow edges
