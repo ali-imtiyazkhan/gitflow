@@ -10,6 +10,7 @@ import {
   type Node,
   type Edge,
   type Connection,
+  type ReactFlowInstance,
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -42,6 +43,7 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
   const { isLoading, error, branches, graph, refresh } = useBranchGraph(owner, repo, view);
   const { triggerMerge } = useMerge(owner, repo);
   const { selectBranch, updateNodePosition } = useGraphStore();
+  const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
 
   // Time Machine State
   const [timeMachineValue, setTimeMachineValue] = useState<number>(100);
@@ -202,6 +204,17 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
   useEffect(() => {
     setEdges(initialEdges);
   }, [initialEdges, setEdges]);
+  
+  // Re-fit view when nodes or view change to ensure no overlap with header
+  useEffect(() => {
+    if (rfInstance && nodes.length > 0) {
+      rfInstance.fitView({ 
+        padding: { top: 220, bottom: 80, left: 60, right: 60 },
+        duration: 800,
+        includeHiddenNodes: false 
+      });
+    }
+  }, [rfInstance, nodes.length, view]);
 
   // When user draws a connection (drag from one node handle to another) → trigger merge
   const onConnect = useCallback(
@@ -380,9 +393,10 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={onNodeClick}
+        onInit={setRfInstance}
         nodeTypes={NODE_TYPES}
         fitView
-        fitViewOptions={{ padding: 0.3 }}
+        fitViewOptions={{ padding: { top: 220, bottom: 80, left: 60, right: 60 }, includeHiddenNodes: false }}
         connectionLineStyle={{ stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '5 3' }}
         defaultEdgeOptions={{ type: 'smoothstep' }}
         proOptions={{ hideAttribution: true }}
