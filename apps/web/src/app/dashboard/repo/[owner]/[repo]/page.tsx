@@ -25,7 +25,7 @@ export default function RepoDashboardPage({ params }: PageProps) {
   return (
     <div className="relative h-[calc(100vh-8rem)] w-full overflow-hidden rounded-[2.5rem] glass-surface shadow-2xl animate-in fade-in zoom-in-95 duration-700">
       {/* Premium Floating Header */}
-      <div className="absolute left-8 top-8 z-40">
+      <div className="absolute right-8 top-6 z-50">
         <div className="flex items-center gap-4 rounded-[2rem] glass-surface px-5 py-3 shadow-[0_20px_50px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-xl dark:bg-white dark:text-slate-950 transition-transform hover:rotate-3">
             <GitBranch className="h-6 w-6" />
@@ -119,7 +119,7 @@ export default function RepoDashboardPage({ params }: PageProps) {
 
       {/* Slide-out High-End Conflict Panel */}
       {activeConflict && (
-        <div className="absolute inset-y-8 right-8 z-40 w-[28rem] animate-in slide-in-from-right-12 duration-700 flex flex-col">
+        <div className="absolute top-[7.5rem] right-8 bottom-8 z-40 w-[28rem] animate-in slide-in-from-right-12 duration-700 flex flex-col">
           <div className="flex-1 overflow-hidden glass-surface rounded-[2rem] shadow-2xl border-l border-white/20 dark:border-slate-800/50">
              <ConflictPanel owner={owner} repo={repo} />
           </div>
