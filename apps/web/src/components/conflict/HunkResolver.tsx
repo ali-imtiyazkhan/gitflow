@@ -18,6 +18,7 @@ export function HunkResolver({ hunk, conflictId, owner, repo }: HunkResolverProp
   const { resolveHunk } = useGraphStore();
   const { getAISuggestion } = useMerge(owner, repo);
   const [isAILoading, setIsAILoading] = useState(false);
+  const [suggestion, setSuggestion] = useState<any | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
   const [manualContent, setManualContent] = useState(
@@ -40,9 +41,12 @@ export function HunkResolver({ hunk, conflictId, owner, repo }: HunkResolverProp
   const handleAISuggest = async () => {
     setIsAILoading(true);
     try {
-      const { suggestion, explanation: aiExplain } = await getAISuggestion(hunk);
-      setManualContent(suggestion);
-      setExplanation(aiExplain);
+      const result = await getAISuggestion(hunk);
+      setSuggestion(result);
+      if (result.resolvedContent) {
+        setManualContent(result.resolvedContent);
+      }
+      setExplanation(result.explanation);
       setShowManual(true);
     } catch (err) {
       console.error('AI suggestion failed', err);
@@ -176,12 +180,33 @@ export function HunkResolver({ hunk, conflictId, owner, repo }: HunkResolverProp
               </div>
 
               {explanation && (
-                 <div className="rounded-lg bg-amber-50 border border-amber-100 p-3 text-[11px] text-amber-900 animate-in fade-in slide-in-from-top-1">
-                    <div className="flex items-center gap-1.5 mb-1 font-bold">
-                       <Sparkles className="h-3 w-3" />
-                       AI Analysis
+                 <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-3 text-[11px] text-indigo-900 animate-in fade-in slide-in-from-top-1">
+                    <div className="flex items-center justify-between mb-1">
+                       <div className="flex items-center gap-1.5 font-bold">
+                          <Sparkles className="h-3 w-3 text-indigo-600" />
+                          AI Analysis
+                       </div>
+                       {suggestion && (
+                          <div className="flex items-center gap-1">
+                             <div className="h-1.5 w-16 bg-gray-200 rounded-full overflow-hidden">
+                                <div 
+                                   className={clsx(
+                                      "h-full rounded-full transition-all duration-1000",
+                                      suggestion.confidence > 0.8 ? "bg-green-500" : suggestion.confidence > 0.5 ? "bg-amber-500" : "bg-red-500"
+                                   )}
+                                   style={{ width: `${suggestion.confidence * 100}%` }}
+                                />
+                             </div>
+                             <span className="text-[9px] font-bold opacity-60">{(suggestion.confidence * 100).toFixed(0)}% Match</span>
+                          </div>
+                       )}
                     </div>
                     {explanation}
+                    {suggestion?.reasoning && (
+                       <div className="mt-2 pt-2 border-t border-indigo-100 italic opacity-80">
+                          <strong>Reasoning:</strong> {suggestion.reasoning}
+                       </div>
+                    )}
                  </div>
               )}
 

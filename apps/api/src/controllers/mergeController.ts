@@ -219,7 +219,7 @@ export class MergeController {
       const response: ApiResponse<any> = {
         success: true,
         data: {
-          suggestion,
+          ...suggestion,
           explanation
         }
       };
@@ -227,6 +227,43 @@ export class MergeController {
     } catch (err) {
       next(err);
     }
+  }
+
+  async getCommitMessage(req: Request, res: Response, next: NextFunction) {
+     try {
+        const { hunks } = req.body as { hunks: ConflictHunk[] };
+        if (!hunks) throw new BadRequestError('Hunks are required');
+        
+        const message = await this.aiService.generateCommitMessage(hunks);
+        res.json({ success: true, data: { message } });
+     } catch (err) {
+        next(err);
+     }
+  }
+
+  async getMergeSummary(req: Request, res: Response, next: NextFunction) {
+     try {
+        const { owner, repo } = req.params;
+        const { base, head } = req.body as { base: string; head: string };
+        
+        if (!base || !head) throw new BadRequestError('Base and Head branches are required');
+
+        const token = this.getAccessToken(req);
+        const githubService = new GitHubService(token);
+
+        // 1. Get comparison diff from GitHub
+        const comparison = await githubService.compareBranches(owner as string, repo as string, base, head);
+        
+        // 2. Extract diff text (GitHub API comparison includes files with patches)
+        const diffText = (comparison.files || []).map(f => `File: ${f.filename}\n${f.patch || ''}`).join('\n\n');
+
+        // 3. Generate AI summary
+        const summary = await this.aiService.generateDiffSummary(diffText);
+        
+        res.json({ success: true, data: { summary } });
+     } catch (err) {
+        next(err);
+     }
   }
 
   async analyzeMerge(req: Request, res: Response, next: NextFunction) {
