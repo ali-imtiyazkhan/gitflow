@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import type { Branch, MergeConflict, BranchGraph, GraphEdge } from '@gitflow/shared';
 
@@ -94,7 +94,7 @@ export const useGraphStore = create<GraphState>()(
             ...state.graph,
             nodes: state.graph.nodes.filter((n) => n.branchId !== sourceBranchId),
             edges: state.graph.edges.filter(
-              (e) => e.fromBranchId !== sourceBranchId && e.toBranchId !== sourceBranchId
+              (e) => e.fromId !== sourceBranchId && e.toId !== sourceBranchId
             ),
           },
           activeConflict: null,

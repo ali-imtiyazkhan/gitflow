@@ -1,5 +1,5 @@
 import { Octokit } from 'octokit';
-import type { Branch, Commit, GitHubRepo, GitHubUser } from '@gitflow/shared';
+import type { Branch, CIStatus, Commit, GitHubRepo, GitHubUser } from '@gitflow/shared';
 import { inferBranchType } from '@gitflow/shared';
 
 export class GitHubService {
@@ -42,7 +42,7 @@ export class GitHubService {
     }));
   }
 
-  // ─── Branches ──────────────────────────────────────────────────────────────
+  // Branches
 
   async getRepoBranches(owner: string, repo: string): Promise<Branch[]> {
     const { data: branches } = await this.octokit.rest.repos.listBranches({
@@ -66,18 +66,22 @@ export class GitHubService {
           commit_sha: detail.commit.sha,
         });
 
+        // Fetch status for head
+        const ciStatus = await this.getCombinedStatus(owner, repo, detail.commit.sha);
+
         const commit: Commit = {
           sha: detail.commit.sha,
           message: detail.commit.commit.message,
           author: detail.commit.commit.author?.name || 'unknown',
           authorAvatar: (detail.commit as any).author?.avatar_url,
           timestamp: detail.commit.commit.author?.date || new Date().toISOString(),
-          parents: latestCommitDetail.parents.map(p => p.sha),
+          parents: latestCommitDetail.parents.map((p) => p.sha),
           additions: 0,
           deletions: 0,
+          ciStatus,
         };
 
-        // Fetch recent history (e.g., last 20 commits for tree building)
+        // Fetch recent history
         const { data: commitHistory } = await this.octokit.rest.repos.listCommits({
           owner,
           repo,
@@ -85,13 +89,14 @@ export class GitHubService {
           per_page: 20,
         });
 
-        const history: Commit[] = commitHistory.map(c => ({
+        const history: Commit[] = commitHistory.map((c) => ({
           sha: c.sha,
           message: c.commit.message,
           author: c.commit.author?.name || 'unknown',
           authorAvatar: (c as any).author?.avatar_url,
           timestamp: c.commit.author?.date || new Date().toISOString(),
-          parents: c.parents.map(p => p.sha),
+          parents: c.parents.map((p) => p.sha),
+          ciStatus: 'none', // Default to none for history to save API calls
           additions: 0,
           deletions: 0,
         }));
@@ -110,11 +115,55 @@ export class GitHubService {
           commits: history,
           isProtected: detail.protected,
           isDraft: false,
+          ciStatus,
         };
       })
     );
 
     return branchDetails;
+  }
+
+  /**
+   * Fetches the combined CI/CD status for a given ref (branch or commit).
+   */
+  async getCombinedStatus(owner: string, repo: string, ref: string): Promise<CIStatus> {
+    try {
+      // 1. Try Combined Status API (older style, used by many CI providers)
+      const { data } = await this.octokit.rest.repos.getCombinedStatusForRef({
+        owner,
+        repo,
+        ref,
+      });
+
+      if (data.state === 'success') return 'success';
+      if (data.state === 'failure' || data.state === 'error') return 'failure';
+      if (data.state === 'pending') return 'pending';
+
+      // 2. Try Check Runs API (modern style, used by GitHub Actions)
+      const { data: checks } = await this.octokit.rest.checks.listForRef({
+        owner,
+        repo,
+        ref,
+      });
+
+      if (checks.total_count > 0) {
+        const anyFailed = checks.check_runs.some(
+          (run) =>
+            run.status === 'completed' &&
+            (run.conclusion === 'failure' || run.conclusion === 'timed_out')
+        );
+        const allCompleted = checks.check_runs.every((run) => run.status === 'completed');
+
+        if (anyFailed) return 'failure';
+        if (allCompleted) return 'success';
+        return 'pending';
+      }
+
+      return 'none';
+    } catch (error) {
+      console.error(`Failed to fetch status for ${ref}:`, error);
+      return 'none';
+    }
   }
 
   async deleteBranch(owner: string, repo: string, branchName: string) {
