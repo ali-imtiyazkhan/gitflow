@@ -30,6 +30,7 @@ interface GraphState {
   addEdge: (edge: GraphEdge) => void;
 }
 
+// use GraphStore to store the graph state
 export const useGraphStore = create<GraphState>()(
   devtools(
     subscribeWithSelector((set, get) => ({
@@ -60,7 +61,6 @@ export const useGraphStore = create<GraphState>()(
 
       inititateMerge: (sourceBranchId, targetBranchId) => {
         set({ isMerging: true });
-        // Conflict detection is handled by the API; this just marks UI as merging
         console.info(`[store] merge initiated: ${sourceBranchId} â†’ ${targetBranchId}`);
       },
 

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Branch, MergeRequest, ResolveConflictRequest, ApiResponse, MergeConflict, BranchGraph, ConflictHunk, RebaseRequest, CIStatus } from '@gitflow/shared';
+import type { Branch, MergeRequest, ResolveConflictRequest, ApiResponse, MergeConflict, BranchGraph, ConflictHunk, RebaseRequest, CIStatus, AISuggestion, StaleBranchReport, AIAnalysis, ApprovalRequest } from '@gitflow/shared';
 
 const apiClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000',
@@ -36,8 +36,8 @@ export async function deleteBranch(owner: string, repo: string, branchName: stri
   if (!res.data.success) throw new Error(res.data.error?.message ?? 'Failed to delete branch');
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 
+// start merge
 export async function startMerge(
   owner: string,
   repo: string,
@@ -88,8 +88,8 @@ export async function fetchAISuggestion(
   owner: string,
   repo: string,
   hunk: ConflictHunk
-): Promise<{ suggestion: string; explanation: string }> {
-  const res = await apiClient.post<ApiResponse<{ suggestion: string; explanation: string }>>(
+): Promise<AISuggestion & { explanation: string }> {
+  const res = await apiClient.post<ApiResponse<AISuggestion & { explanation: string }>>(
     `/api/v1/repos/${owner}/${repo}/conflicts/ai-suggestion`,
     hunk
   );
@@ -97,12 +97,50 @@ export async function fetchAISuggestion(
   return res.data.data;
 }
 
-export async function fetchGlobalAnalysis(
+export async function fetchAICommitMessage(
   owner: string,
   repo: string,
   hunks: ConflictHunk[]
 ): Promise<string> {
-  const res = await apiClient.post<ApiResponse<{ analysis: string }>>(
+  const res = await apiClient.post<ApiResponse<{ message: string }>>(
+    `/api/v1/repos/${owner}/${repo}/conflicts/ai-commit-message`,
+    { hunks }
+  );
+  if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'AI failed to generate commit message');
+  return res.data.data.message;
+}
+
+export async function fetchMergeSummary(
+  owner: string,
+  repo: string,
+  base: string,
+  head: string
+): Promise<any> {
+  const res = await apiClient.post<ApiResponse<{ summary: any }>>(
+    `/api/v1/repos/${owner}/${repo}/merge-summary`,
+    { base, head }
+  );
+  if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'AI failed to generate merge summary');
+  return res.data.data.summary;
+}
+
+export async function fetchBranchHealth(
+  owner: string,
+  repo: string
+): Promise<StaleBranchReport[]> {
+  const res = await apiClient.get<ApiResponse<StaleBranchReport[]>>(
+    `/api/v1/repos/${owner}/${repo}/branch-health`
+  );
+  if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'Failed to fetch branch health');
+  return res.data.data;
+}
+
+export async function fetchGlobalAnalysis(
+  owner: string,
+  repo: string,
+  hunks: ConflictHunk[]
+): Promise<any> {
+  const res = await apiClient.post<ApiResponse<{ analysis: any }>>(
     `/api/v1/repos/${owner}/${repo}/conflicts/analyze`,
     { hunks }
   );
@@ -133,6 +171,40 @@ export async function performRebase(
   );
   if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'Rebase failed');
   return res.data.data.newHeadSha;
+}
+
+// Operational Extensions 
+
+export async function fetchApprovals(owner: string, repo: string): Promise<ApprovalRequest[]> {
+  const res = await apiClient.get<ApiResponse<ApprovalRequest[]>>(`/api/v1/repos/${owner}/${repo}/approvals`);
+  return res.data.data || [];
+}
+
+export async function createApproval(owner: string, repo: string, data: any): Promise<ApprovalRequest> {
+  const res = await apiClient.post<ApiResponse<ApprovalRequest>>(`/api/v1/repos/${owner}/${repo}/approvals`, data);
+  if (!res.data.data) throw new Error('Failed to create approval');
+  return res.data.data;
+}
+
+export async function approveRequest(owner: string, repo: string, id: string): Promise<ApprovalRequest> {
+  const res = await apiClient.post<ApiResponse<ApprovalRequest>>(`/api/v1/repos/${owner}/${repo}/approvals/${id}/approve`);
+  if (!res.data.data) throw new Error('Failed to approve');
+  return res.data.data;
+}
+
+export async function fetchEvents(owner: string, repo: string, limit = 50): Promise<any[]> {
+  const res = await apiClient.get<ApiResponse<any[]>>(`/api/v1/repos/${owner}/${repo}/events`, { params: { limit } });
+  return res.data.data || [];
+}
+
+export async function replayEvent(owner: string, repo: string, eventId: string): Promise<void> {
+  await apiClient.post(`/api/v1/repos/${owner}/${repo}/events/${eventId}/replay`);
+}
+
+export async function createPullRequest(owner: string, repo: string, data: any): Promise<any> {
+  const res = await apiClient.post<ApiResponse<any>>(`/api/v1/repos/${owner}/${repo}/pull-requests`, data);
+  if (!res.data.data) throw new Error('Failed to create PR');
+  return res.data.data;
 }
 
 export default apiClient;

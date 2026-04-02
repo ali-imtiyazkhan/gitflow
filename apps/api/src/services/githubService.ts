@@ -1,6 +1,10 @@
 import { Octokit } from 'octokit';
-import type { Branch, CIStatus, Commit, GitHubRepo, GitHubUser } from '@gitflow/shared';
+import type { Branch, CIStatus, Commit, GitHubRepo, GitHubUser, CIState } from '@gitflow/shared';
 import { inferBranchType } from '@gitflow/shared';
+
+export function createOctokit(token: string) {
+  return new Octokit({ auth: token });
+}
 
 export class GitHubService {
   private octokit: Octokit;
@@ -126,9 +130,9 @@ export class GitHubService {
   /**
    * Fetches the combined CI/CD status for a given ref (branch or commit).
    */
-  async getCombinedStatus(owner: string, repo: string, ref: string): Promise<CIStatus> {
+  async getCombinedStatus(owner: string, repo: string, ref: string): Promise<CIState> {
     try {
-      // 1. Try Combined Status API (older style, used by many CI providers)
+      // 1. Try Combined Status API
       const { data } = await this.octokit.rest.repos.getCombinedStatusForRef({
         owner,
         repo,
@@ -139,7 +143,7 @@ export class GitHubService {
       if (data.state === 'failure' || data.state === 'error') return 'failure';
       if (data.state === 'pending') return 'pending';
 
-      // 2. Try Check Runs API (modern style, used by GitHub Actions)
+      // 2. Try Check Runs API
       const { data: checks } = await this.octokit.rest.checks.listForRef({
         owner,
         repo,
@@ -150,7 +154,7 @@ export class GitHubService {
         const anyFailed = checks.check_runs.some(
           (run) =>
             run.status === 'completed' &&
-            (run.conclusion === 'failure' || run.conclusion === 'timed_out')
+            (run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'cancelled')
         );
         const allCompleted = checks.check_runs.every((run) => run.status === 'completed');
 
@@ -162,7 +166,25 @@ export class GitHubService {
       return 'none';
     } catch (error) {
       console.error(`Failed to fetch status for ${ref}:`, error);
-      return 'none';
+      return 'unknown';
+    }
+  }
+
+  async getCheckRuns(
+    owner: string,
+    repo: string,
+    ref: string
+  ): Promise<Array<{ name: string; status: string; conclusion: string | null; url: string }>> {
+    try {
+      const { data } = await this.octokit.rest.checks.listForRef({ owner, repo, ref, per_page: 10 });
+      return data.check_runs.map(r => ({
+        name: r.name,
+        status: r.status,
+        conclusion: r.conclusion ?? null,
+        url: r.html_url ?? '',
+      }));
+    } catch {
+      return [];
     }
   }
 

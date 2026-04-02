@@ -12,7 +12,9 @@ router.post('/:owner/:repo/merge', (req, res, next) => mergeController.startMerg
 
 router.get('/conflicts/all', (req, res, next) => mergeController.getAllConflicts(req, res, next));
 router.post('/:owner/:repo/conflicts/ai-suggestion', (req, res, next) => mergeController.getAISuggestion(req, res, next));
+router.post('/:owner/:repo/conflicts/ai-commit-message', (req, res, next) => mergeController.getCommitMessage(req, res, next));
 router.post('/:owner/:repo/conflicts/analyze', (req, res, next) => mergeController.analyzeMerge(req, res, next));
+router.post('/:owner/:repo/merge-summary', (req, res, next) => mergeController.getMergeSummary(req, res, next));
 
 // Rebase & Status
 router.post('/:owner/:repo/rebase', (req, res, next) => mergeController.rebase(req, res, next));

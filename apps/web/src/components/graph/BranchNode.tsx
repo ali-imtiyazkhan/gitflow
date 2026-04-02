@@ -2,7 +2,7 @@
 
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { GitBranch, AlertTriangle, CheckCircle, Clock, Trash2, Loader2, ShieldCheck, ShieldAlert, Shield } from 'lucide-react';
+import { GitBranch, AlertTriangle, CheckCircle, Clock, Trash2, Loader2, ShieldCheck, ShieldAlert, Shield, HelpCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { Branch, CIStatus } from '@gitflow/shared';
 import { relativeTime, shortSha } from '@gitflow/shared';
@@ -24,6 +24,7 @@ const ciConfig: Record<CIStatus, { color: string; icon: any; label: string; anim
   failure: { color: 'bg-red-100 text-red-700 border-red-200', icon: ShieldAlert, label: 'Failed' },
   pending: { color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Loader2, label: 'Running', animate: true },
   none:    { color: 'bg-gray-100 text-gray-500 border-gray-200', icon: Shield, label: 'No CI' },
+  unknown: { color: 'bg-slate-100 text-slate-500 border-slate-200', icon: HelpCircle, label: 'Unknown' },
 };
 
 export const BranchNode = memo(function BranchNode({ data, selected }: NodeProps) {
@@ -35,29 +36,43 @@ export const BranchNode = memo(function BranchNode({ data, selected }: NodeProps
   return (
     <div
       className={clsx(
-        'relative min-w-[160px] rounded-xl border-2 px-3 py-2.5 shadow-sm transition-all',
-        cfg.color,
-        selected && 'ring-2 ring-blue-400 ring-offset-2',
-        branch.isTarget && 'ring-4 ring-orange-400 ring-offset-4 animate-pulse',
-        isMain && 'min-w-[180px]'
+        'group relative min-w-[180px] rounded-2xl border-2 px-4 py-3 transition-all duration-500',
+        'glass-surface glass-border hover:shadow-2xl hover:-translate-y-1',
+        selected ? 'ring-4 ring-purple-500/30 border-purple-500 scale-[1.02] z-50' : 'border-slate-200/50 dark:border-slate-800/50',
+        branch.isTarget && 'ring-8 ring-brand-warning/20 border-brand-warning animate-pulse-glow',
+        isMain && 'min-w-[200px] border-l-4 border-l-brand-primary'
       )}
     >
+      {/* Dynamic Glow Background */}
+      {selected && (
+        <div className="absolute inset-0 -z-10 bg-gradient-to-br from-purple-500/5 to-blue-500/5 blur-xl animate-pulse" />
+      )}
+
       {/* Handles */}
-      <Handle type="target" position={Position.Left}  className="!h-3 !w-3 !border-2 !border-white !bg-gray-400" />
-      <Handle type="source" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-gray-400" />
+      <Handle 
+        type="target" 
+        position={Position.Left}  
+        className="!w-3 !h-3 !-left-2 !border-2 !border-white dark:!border-slate-900 !bg-slate-400" 
+      />
+      <Handle 
+        type="source" 
+        position={Position.Right} 
+        className="!w-3 !h-3 !-right-2 !border-2 !border-white dark:!border-slate-900 !bg-slate-400" 
+      />
 
       {/* CI Status Badge */}
       {branch.ciStatus && branch.ciStatus !== 'none' && (
         <div className={clsx(
-          'absolute -top-3 -right-2 flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold shadow-sm ring-2 ring-white transition-all hover:scale-105',
-          ciConfig[branch.ciStatus].color
+          'absolute -top-3 -right-3 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold shadow-lg ring-2 ring-white dark:ring-slate-900 transition-all hover:scale-110',
+          ciConfig[branch.ciStatus].color,
+          branch.ciStatus === 'pending' && 'animate-pulse'
         )}>
           {branch.ciStatus === 'pending' ? (
-            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
             (() => {
                 const CIIcon = ciConfig[branch.ciStatus].icon;
-                return <CIIcon className="h-2.5 w-2.5" />;
+                return <CIIcon className="h-3 w-3" />;
             })()
           )}
           {ciConfig[branch.ciStatus].label}
@@ -65,48 +80,64 @@ export const BranchNode = memo(function BranchNode({ data, selected }: NodeProps
       )}
 
       {/* Header */}
-      <div className="flex items-center gap-1.5">
-        <Icon className={clsx('h-3.5 w-3.5 flex-shrink-0', cfg.iconColor)} />
-        <span className={clsx('max-w-[130px] truncate text-xs font-semibold', isMain ? 'text-gray-900' : 'text-gray-700')}>
-          {branch.name}
-        </span>
-        
-        {isMain ? (
-          <span className="ml-auto rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-white">
-            main
+      <div className="flex items-center gap-2">
+        <div className={clsx('flex h-8 w-8 items-center justify-center rounded-xl bg-opacity-10', cfg.color.replace('border-', 'bg-'))}>
+          <Icon className={clsx('h-4 w-4', cfg.iconColor)} />
+        </div>
+        <div className="flex flex-col overflow-hidden">
+          <span className={clsx('truncate text-[13px] font-bold tracking-tight', isMain ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300')}>
+            {branch.name}
           </span>
-        ) : (
+          <span className="text-[10px] font-medium text-slate-400 uppercase tracking-tighter">
+            {isMain ? 'Locked Branch' : 'Feature Branch'}
+          </span>
+        </div>
+        
+        {!isMain && (
           <button
             onClick={(e) => {
               e.stopPropagation();
               (branch as any).onDelete?.(branch.name);
             }}
-            className="ml-auto flex h-6 w-6 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+            className="ml-auto flex h-7 w-7 items-center justify-center rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-all"
             title="Delete branch"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      {/* Meta */}
-      <div className="mt-1.5 flex flex-col gap-0.5">
-        <div className="flex items-center justify-between gap-2 text-[10px] text-gray-500">
-          <span>{branch.commits.length} commit{branch.commits.length !== 1 ? 's' : ''}</span>
-          <span className="font-mono">{shortSha(branch.sha)}</span>
+      {/* Social / Multiplayer Context (Live Presence) */}
+      <div className="mt-3 flex items-center justify-between border-t border-slate-100/50 pt-3 dark:border-slate-800/50">
+        <div className="flex -space-x-1.5 overflow-hidden">
+          {/* Presence dots - would be populated from socket presence state */}
+          <div className="h-5 w-5 rounded-full border-2 border-white bg-brand-primary dark:border-slate-900" title="User Active" />
+          <div className="h-5 w-5 rounded-full border-2 border-white bg-brand-accent dark:border-slate-900" title="User Active" />
         </div>
-        <div className="text-[10px] text-gray-400">
-          {relativeTime(branch.lastCommitAt)} · {branch.author}
+        <div className="flex items-center gap-1.5 text-[10px] font-mono font-medium text-slate-400">
+           <Clock className="h-3 w-3" />
+           {relativeTime(branch.lastCommitAt)}
         </div>
-        {branch.status === 'conflict' && (
-          <div className="mt-1 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
-            ⚠ Has conflicts
+      </div>
+
+      {/* Conflict / Ahead-Behind Overlay */}
+      <div className="mt-2.5 flex items-center gap-2">
+        {branch.status === 'conflict' ? (
+          <div className="flex w-full items-center gap-1.5 rounded-lg bg-red-500/5 px-2 py-1 text-[11px] font-bold text-red-500 ring-1 ring-red-500/20">
+            <ShieldAlert className="h-3 w-3" />
+            Merge Conflicts
           </div>
-        )}
-        {(branch.aheadBy > 0 || branch.behindBy > 0) && (
-          <div className="mt-0.5 flex gap-2 text-[10px] text-gray-400">
-            {branch.aheadBy  > 0 && <span className="text-green-600">↑{branch.aheadBy}</span>}
-            {branch.behindBy > 0 && <span className="text-red-500">↓{branch.behindBy}</span>}
+        ) : (
+          <div className="flex w-full items-center gap-2">
+            {(branch.aheadBy > 0 || branch.behindBy > 0) && (
+              <div className="flex items-center gap-3">
+                {branch.aheadBy > 0 && <span className="flex items-center gap-0.5 text-brand-accent">↑{branch.aheadBy}</span>}
+                {branch.behindBy > 0 && <span className="flex items-center gap-0.5 text-brand-danger">↓{branch.behindBy}</span>}
+              </div>
+            )}
+            <div className="ml-auto rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono text-slate-500 dark:bg-slate-800">
+              {shortSha(branch.sha)}
+            </div>
           </div>
         )}
       </div>

@@ -1,10 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { GitHubService } from '@/services/githubService';
 import { GraphService } from '@/services/graphService';
+import { AIService } from '@/services/aiService';
 import { ApiResponse } from '@gitflow/shared';
 
 export class RepoController {
   private graphService = new GraphService();
+  private aiService = new AIService();
 
   // Helper to extract access token from headers
   private getAccessToken(req: Request): string {
@@ -74,6 +76,24 @@ export class RepoController {
       };
       res.json(response);
     } catch (err: any) {
+      next(err);
+    }
+  }
+
+  async getBranchHealth(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { owner, repo } = req.params;
+      const token = this.getAccessToken(req);
+      const gitHubService = new GitHubService(token);
+
+      const branches = await gitHubService.getRepoBranches(owner as string, repo as string);
+      const report = await this.aiService.analyzeBranchHealth(branches);
+
+      res.json({
+        success: true,
+        data: report
+      });
+    } catch (err) {
       next(err);
     }
   }

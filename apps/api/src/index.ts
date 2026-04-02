@@ -8,7 +8,11 @@ import { Server } from 'socket.io';
 import { API_BASE_PATH } from '@gitflow/shared';
 import repoRoutes from '@/routes/repoRoutes';
 import mergeRoutes from '@/routes/mergeRoutes';
+import approvalRouter from '@/routes/approvalRoutes';
+import webhookRouter from '@/routes/webhookRoutes';
+import prRouter from '@/routes/prRoutes';
 import { ApiError } from './utils/apiError';
+import { registerSocketHandlers } from './services/socketHandlers';
 
 // Load environment variables
 dotenv.config();
@@ -27,18 +31,7 @@ const port = process.env.PORT || 4000;
 
 // ─── Socket.io ───────────────────────────────────────────────────────────────
 
-io.on('connection', (socket) => {
-  console.info(`[Socket]: Client connected: ${socket.id}`);
-
-  socket.on('join-repo', (repoId) => {
-    socket.join(repoId);
-    console.info(`[Socket]: Client ${socket.id} joined repo: ${repoId}`);
-  });
-
-  socket.on('disconnect', () => {
-    console.info(`[Socket]: Client disconnected: ${socket.id}`);
-  });
-});
+registerSocketHandlers(io);
 
 // Make io accessible to routes
 app.set('io', io);
@@ -63,7 +56,10 @@ app.get('/health', (req, res) => {
 
 app.use(`${API_BASE_PATH}/repos`, repoRoutes);
 app.use(`${API_BASE_PATH}/repos`, mergeRoutes);
-// app.use(`${API_BASE_PATH}/conflicts`, conflictRoutes);
+app.use(`${API_BASE_PATH}/repos`, approvalRouter);
+app.use(`${API_BASE_PATH}/repos`, prRouter);
+app.use(`${API_BASE_PATH}/webhooks`, webhookRouter);
+app.use(`${API_BASE_PATH}/repos`, webhookRouter); // Also mount events here
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
 

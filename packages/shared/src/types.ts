@@ -11,7 +11,8 @@ export type BranchStatus =
   | 'merged'
   | 'stale';
 
-export type CIStatus = 'success' | 'failure' | 'pending' | 'none';
+export type CIState = 'success' | 'pending' | 'failure' | 'unknown' | 'none';
+export type CIStatus = CIState;
 
 export interface Branch {
   id: string;
@@ -58,6 +59,28 @@ export interface ConflictHunk {
   resolved: boolean;
   resolution?: ConflictResolutionStrategy;
   resolvedContent?: string;
+  aiExplanation?: string;
+}
+
+export interface AISuggestion {
+  strategy: 'ours' | 'theirs' | 'both' | 'manual';
+  resolvedContent?: string;
+  confidence: number;
+  reasoning: string;
+}
+
+export interface StaleBranchReport {
+  name: string;
+  status: 'stale' | 'healthy' | 'risky';
+  reason: string;
+  staleDays: number;
+  riskScore: number;
+}
+
+export interface AIAnalysis {
+  bullets: string[];
+  riskLevel: 'low' | 'medium' | 'high';
+  summaryText: string;
 }
 
 export interface ConflictFile {
@@ -175,13 +198,50 @@ export type WSEventType =
   | 'merge:completed'
   | 'merge:conflict'
   | 'conflict:resolved'
-  | 'graph:updated';
+  | 'graph:updated'
+  | 'approval:requested'
+  | 'approval:status_changed'
+  | 'deployment:ready';
 
 export interface WSEvent<T = unknown> {
   type: WSEventType;
   payload: T;
   timestamp: string;
   repoId: string;
+}
+
+export interface DeploymentInfo {
+  provider: 'vercel' | 'netlify';
+  url: string;
+  status: 'ready' | 'building' | 'failed';
+  branch: string;
+}
+
+export interface CursorPosition {
+  x: number;
+  y: number;
+  userId: string;
+  username: string;
+  color: string;
+  updatedAt: number;
+}
+
+export interface PresenceUpdate {
+  cursors: CursorPosition[];
+  activeUsers: string[];
+}
+
+export interface ApprovalRequest {
+  id: string;
+  repoId: string;
+  sourceBranch: string;
+  targetBranch: string;
+  status: 'pending' | 'approved' | 'rejected' | 'closed';
+  requestedBy: string;
+  approvedBy: string[];
+  requiredApprovals: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Action Types (for merge operations) ─────────────────────────────────────

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      :root {
+        --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+        --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        --border-radius-md: 0.375rem;
+        --border-radius-lg: 0.5rem;
+        --color-border-primary: #374151;
+        --color-border-secondary: #e5e7eb;
+        --color-border-tertiary: #f3f4f6;
+        --color-border-danger: #fecaca;
+        --color-background-primary: #ffffff;
+        --color-background-secondary: #f9fafb;
+        --color-background-info: #eff6ff;
+        --color-text-primary: #111827;
+        --color-text-secondary: #4b5563;
+        --color-text-tertiary: #9ca3af;
+        --color-text-danger: #dc2626;
+      }
+      
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --color-border-primary: #e5e7eb;
+          --color-border-secondary: #374151;
+          --color-border-tertiary: #1f2937;
+          --color-border-danger: #991b1b;
+          --color-background-primary: #111827;
+          --color-background-secondary: #0f172a;
+          --color-background-info: #1e293b;
+          --color-text-primary: #f9fafb;
+          --color-text-secondary: #9ca3af;
+          --color-text-tertiary: #6b7280;
+          --color-text-danger: #ef4444;
+        }
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: var(--font-sans); background: transparent; overflow: hidden; }
+      #app { padding: 16px; height: 100vh; display: flex; flex-direction: column; }
+      #toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+      #toolbar button { font-size: 11px; padding: 4px 10px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-primary); cursor: pointer; transition: all 0.2s; }
+      #toolbar button:hover { background: var(--color-background-secondary); border-color: var(--color-border-primary); }
+      #toolbar .sep { width: 1px; height: 16px; background: var(--color-border-tertiary); }
+      #toolbar label { font-size: 11px; font-weight: 600; color: var(--color-text-secondary); }
+      #canvas-wrap { position: relative; border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); background: var(--color-background-secondary); overflow: hidden; flex: 1; min-height: 300px; }
+      #cvs { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+      .branch-node { position: absolute; background: var(--color-background-primary); border: 1.5px solid var(--color-border-secondary); border-radius: 50%; width: 64px; height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: grab; user-select: none; transition: box-shadow .15s, border-color .15s; font-size: 10px; text-align: center; z-index: 10; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+      .branch-node:hover { border-color: #3b82f6; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); }
+      .branch-node.main-branch { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+      .branch-node.feature-branch { border-color: #8b5cf6; background: #f5f3ff; color: #6d28d9; }
+      .branch-node.conflict-branch { border-color: #ef4444; background: #fef2f2; color: #991b1b; }
+      .branch-node.merged-branch { border-color: #10b981; background: #ecfdf5; color: #065f46; }
+      .branch-node.dragging { opacity: .75; cursor: grabbing; z-index: 100; transform: scale(1.05); }
+      .branch-node.drop-target { box-shadow: 0 0 0 4px #10b981aa; border-color: #10b981; }
+      .branch-name { font-size: 9px; font-weight: 600; margin-top: 2px; max-width: 54px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .branch-status { font-size: 8px; opacity: .7; }
+      #conflict-panel { margin-top: 10px; border: 1px solid #fecaca; border-radius: var(--border-radius-lg); background: var(--color-background-primary); padding: 12px; display: none; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); }
+      #conflict-panel h3 { font-size: 12px; font-weight: 600; color: #dc2626; margin-bottom: 8px; }
+      #conflict-editor { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+      .conflict-side { font-size: 10px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); padding: 8px; background: var(--color-background-secondary); }
+      .conflict-side h4 { font-size: 10px; font-weight: 600; margin-bottom: 4px; }
+      .conflict-side pre { font-family: var(--font-mono); font-size: 9px; color: var(--color-text-secondary); white-space: pre-wrap; }
+      .conflict-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      .conflict-actions button { font-size: 10px; padding: 4px 10px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); cursor: pointer; background: var(--color-background-secondary); color: var(--color-text-primary); transition: all 0.2s; }
+      .conflict-actions button.accept { background: #ecfdf5; border-color: #10b981; color: #065f46; font-weight: 600; }
+      .conflict-actions button.accept:hover { background: #d1fae5; }
+      #log { margin-top: 8px; font-size: 10px; color: var(--color-text-tertiary); min-height: 16px; font-style: italic; }
+      #hint { position: absolute; bottom: 8px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--color-text-tertiary); pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="toolbar">
+        <label>Sandbox Preview:</label>
+        <button onclick="addBranch()">+ Add Branch</button>
+        <div class="sep"></div>
+        <label style="font-size:10px;color:var(--color-text-tertiary);font-weight:normal">Drag a feature onto main to simulate a merge conflict.</label>
+      </div>
+      <div id="canvas-wrap">
+        <canvas id="cvs"></canvas>
+        <div id="hint">Interactive Demo: Drag and Drop Branches to Merge</div>
+      </div>
+      <div id="conflict-panel">
+        <h3 id="conflict-title">⚠ Merge Conflict Detected</h3>
+        <div id="conflict-editor">
+          <div class="conflict-side">
+            <h4 id="side-a-label" style="color:#1d4ed8">main</h4>
+            <pre id="side-a-code">function greet() {
+  return "Hello World";
+}</pre>
+          </div>
+          <div class="conflict-side">
+            <h4 id="side-b-label" style="color:#6d28d9">feature/login</h4>
+            <pre id="side-b-code">function greet(name) {
+  return `Hello, ${name}!`;
+}</pre>
+          </div>
+        </div>
+        <div class="conflict-actions">
+          <button class="accept" onclick="resolveConflict('ours')">✓ Keep main</button>
+          <button class="accept" onclick="resolveConflict('theirs')" style="background:#f5f3ff;border-color:#8b5cf6;color:#6d28d9">✓ Keep feature</button>
+          <button onclick="resolveConflict('both')">⊕ Keep Both</button>
+          <button onclick="cancelConflict()" style="color:var(--color-text-secondary)">✕ Cancel</button>
+        </div>
+      </div>
+      <div id="log"></div>
+    </div>
+
+    <script>
+      const wrap = document.getElementById('canvas-wrap');
+      const cvs = document.getElementById('cvs');
+      const ctx = cvs.getContext('2d');
+
+      let branches = [
+        { id: 1, name: 'main', x: 120, y: 150, type: 'main', status: 'stable', commits: 12 },
+        { id: 2, name: 'feature/auth', x: 300, y: 80, type: 'feature', status: 'ahead 3', commits: 3 },
+        { id: 3, name: 'feature/ui', x: 300, y: 220, type: 'feature', status: 'ahead 2', commits: 2 },
+        { id: 4, name: 'hotfix/api', x: 500, y: 150, type: 'conflict', status: 'conflict!', commits: 1 }
+      ];
+      let edges = [
+        { from: 1, to: 2 }, { from: 1, to: 3 }, { from: 2, to: 4 }
+      ];
+      let nodes = {};
+      let draggingArr = null;
+      let pendingMerge = null;
+      let branchIdCounter = 5;
+
+      function log(msg) {
+        document.getElementById('log').textContent = '→ ' + msg;
+      }
+
+      function typeClass(b) {
+        if (b.type === 'main') return 'main-branch';
+        if (b.type === 'conflict') return 'conflict-branch';
+        if (b.type === 'merged') return 'merged-branch';
+        return 'feature-branch';
+      }
+
+      function renderNodes() {
+        const existing = Object.keys(nodes).map(Number);
+        const current = branches.map(b => b.id);
+        existing.filter(id => !current.includes(id)).forEach(id => {
+          nodes[id]?.remove();
+          delete nodes[id];
+        });
+
+        branches.forEach(b => {
+          if (!nodes[b.id]) {
+            const el = document.createElement('div');
+            el.className = 'branch-node ' + typeClass(b);
+            el.dataset.id = b.id;
+            el.addEventListener('mousedown', (e) => onMouseDown(e, b));
+            wrap.appendChild(el);
+            nodes[b.id] = el;
+          }
+          const el = nodes[b.id];
+          el.className = 'branch-node ' + typeClass(b) + (pendingMerge?.srcId === b.id ? ' dragging' : '');
+          const icon = b.type === 'main' ? '●' : b.type === 'conflict' ? '⚠' : b.type === 'merged' ? '✓' : '○';
+          el.innerHTML = `<span style="font-size:18px">${icon}</span><div class="branch-name">${b.name}</div><div class="branch-status">${b.status}</div>`;
+          el.style.left = (b.x - 32) + 'px';
+          el.style.top = (b.y - 32) + 'px';
+        });
+      }
+
+      function onMouseDown(e, b) {
+        const rect = nodes[b.id].getBoundingClientRect();
+        const wr = wrap.getBoundingClientRect();
+        const offX = e.clientX - rect.left - 32;
+        const offY = e.clientY - rect.top - 32;
+        nodes[b.id].classList.add('dragging');
+
+        function move(ev) {
+          const wr2 = wrap.getBoundingClientRect();
+          b.x = Math.max(32, Math.min(wrap.clientWidth - 32, ev.clientX - wr2.left - offX));
+          b.y = Math.max(32, Math.min(wrap.clientHeight - 32, ev.clientY - wr2.top - offY));
+          
+          // Drop detection
+          branches.forEach(target => {
+            if (target.id !== b.id) {
+              const dist = Math.sqrt((b.x - target.x)**2 + (b.y - target.y)**2);
+              if (dist < 40) nodes[target.id].classList.add('drop-target');
+              else nodes[target.id].classList.remove('drop-target');
+            }
+          });
+
+          renderNodes();
+          drawEdges();
+        }
+
+        function up(ev) {
+          nodes[b.id].classList.remove('dragging');
+          window.removeEventListener('mousemove', move);
+          window.removeEventListener('mouseup', up);
+
+          const targetNode = branches.find(t => {
+            if (t.id === b.id) return false;
+            const dist = Math.sqrt((b.x - t.x)**2 + (b.y - t.y)**2);
+            return dist < 40;
+          });
+
+          if (targetNode) {
+            nodes[targetNode.id].classList.remove('drop-target');
+            onDropOn(b.id, targetNode.id);
+          }
+        }
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', up);
+      }
+
+      function onDropOn(srcId, targetId) {
+        const src = branches.find(b => b.id === srcId);
+        const tgt = branches.find(b => b.id === targetId);
+        if (!src || !tgt) return;
+
+        if (src.type === 'conflict' || Math.random() < 0.6) {
+          pendingMerge = { srcId: src.id, tgtId: tgt.id };
+          showConflict(src.name, tgt.name);
+        } else {
+          doMerge(src.id, tgt.id);
+        }
+      }
+
+      function doMerge(srcId, tgtId) {
+        const src = branches.find(b => b.id === srcId);
+        const tgt = branches.find(b => b.id === targetId);
+        if (!src || !tgt) return;
+        log(`Merged "${src.name}" into "${tgt.name}"`);
+        branches = branches.filter(b => b.id !== srcId);
+        edges = edges.filter(e => e.from !== srcId && e.to !== srcId);
+        tgt.commits += src.commits;
+        tgt.status = tgt.type === 'main' ? 'stable' : `${tgt.commits} commits`;
+        if (tgt.type === 'conflict') tgt.type = 'merged', tgt.status = 'merged';
+        renderNodes();
+        drawEdges();
+        hideConflict();
+      }
+
+      function showConflict(srcName, tgtName) {
+        const panel = document.getElementById('conflict-panel');
+        panel.style.display = 'block';
+        document.getElementById('conflict-title').textContent = `⚠ Conflict: ${srcName} → ${tgtName}`;
+        document.getElementById('side-a-label').textContent = tgtName;
+        document.getElementById('side-b-label').textContent = srcName;
+        log(`Conflict detected. Manual resolution required.`);
+      }
+
+      function hideConflict() {
+        document.getElementById('conflict-panel').style.display = 'none';
+        pendingMerge = null;
+        renderNodes();
+      }
+
+      function resolveConflict(strategy) {
+        if (!pendingMerge) return;
+        doMerge(pendingMerge.srcId, pendingMerge.tgtId);
+      }
+
+      function cancelConflict() {
+        hideConflict();
+        log('Merge cancelled.');
+      }
+
+      function addBranch() {
+        const names = ['feature/api', 'fix/nav', 'chore/ui', 'feature/docs'];
+        const name = names[Math.floor(Math.random() * names.length)] + '-' + branchIdCounter;
+        const main = branches.find(b => b.type === 'main');
+        const x = 150 + Math.random() * 300;
+        const y = 50 + Math.random() * 200;
+        const newB = { id: branchIdCounter++, name, x, y, type: 'feature', status: '1 commit', commits: 1 };
+        branches.push(newB);
+        if (main) edges.push({ from: main.id, to: newB.id });
+        renderNodes();
+        drawEdges();
+        log(`Created branch "${name}"`);
+      }
+
+      function drawEdges() {
+        const W = wrap.clientWidth, H = wrap.clientHeight;
+        cvs.width = W; cvs.height = H;
+        ctx.clearRect(0, 0, W, H);
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        ctx.strokeStyle = isDark ? '#334155' : '#e2e8f0';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+
+        edges.forEach(e => {
+          const a = branches.find(b => b.id === e.from);
+          const b2 = branches.find(b => b.id === e.to);
+          if (!a || !b2) return;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          const cx = (a.x + b2.x) / 2;
+          ctx.bezierCurveTo(cx, a.y, cx, b2.y, b2.x, b2.y);
+          ctx.stroke();
+        });
+      }
+
+      window.addEventListener('resize', () => { renderNodes(); drawEdges(); });
+      renderNodes();
+      drawEdges();
+    </script>
+  </body>
+</html>

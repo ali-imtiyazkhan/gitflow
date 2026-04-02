@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useGraphStore } from '@/store/graphStore';
-import { startMerge, fetchConflict, fetchAISuggestion, resolveConflict, fetchGlobalAnalysis } from '@/lib/apiClient';
+import { startMerge, fetchConflict, fetchAISuggestion, resolveConflict, fetchGlobalAnalysis, fetchAICommitMessage, fetchMergeSummary } from '@/lib/apiClient';
 import type { ConflictHunk, ResolveConflictRequest } from '@gitflow/shared';
 
 export function useMerge(owner: string, repo: string) {
@@ -74,7 +74,8 @@ export function useMerge(owner: string, repo: string) {
       setLoading(true);
       setError(null);
       try {
-        return await fetchGlobalAnalysis(owner, repo, hunks);
+        const res = await fetchGlobalAnalysis(owner, repo, hunks);
+        return res; // AIAnalysis object
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Global analysis failed');
         throw err;
@@ -85,5 +86,38 @@ export function useMerge(owner: string, repo: string) {
     [owner, repo, setLoading, setError]
   );
 
-  return { triggerMerge, getAISuggestion, resolveConflictAction, analyzeMerge };
+  const getAICommitMessage = useCallback(
+    async (hunks: ConflictHunk[]) => {
+      setLoading(true);
+      setError(null);
+      try {
+        return await fetchAICommitMessage(owner, repo, hunks);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'AI commit message failed');
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [owner, repo, setLoading, setError]
+  );
+
+  const getMergeSummary = useCallback(
+    async (base: string, head: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetchMergeSummary(owner, repo, base, head);
+        return res; // No longer just a string
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Merge summary failed');
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [owner, repo, setLoading, setError]
+  );
+
+  return { triggerMerge, getAISuggestion, resolveConflictAction, analyzeMerge, getAICommitMessage, getMergeSummary };
 }

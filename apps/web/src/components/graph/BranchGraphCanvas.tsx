@@ -23,6 +23,7 @@ import { deleteBranch, performRebase } from '@/lib/apiClient';
 import { useGraphStore } from '@/store/graphStore';
 import { useSocket } from '@/hooks/useSocket';
 import { TimeMachineSlider } from './TimeMachineSlider';
+import { MergeSummaryModal } from './MergeSummaryModal';
 import { GRAPH_DEFAULTS } from '@gitflow/shared';
 
 const NODE_TYPES = {
@@ -48,6 +49,9 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
   
   // Rebase Mode State
   const [isRebaseMode, setIsRebaseMode] = useState(false);
+
+  // Merge Preview State
+  const [pendingMerge, setPendingMerge] = useState<{ source: string, target: string } | null>(null);
 
   // Listen for real-time updates
   const socket = useSocket(`${owner}/${repo}`);
@@ -280,12 +284,7 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
         } 
         // ─── Standard Merge Logic (Branch View) ──────────────────────────────
         else if (!isRebaseMode && sourceType === 'branch' && targetType === 'branch') {
-          const sourceName = (node.data as any).name;
-          const targetName = (targetNode.data as any).name;
-
-          if (window.confirm(`Do you want to merge "${sourceName}" into "${targetName}"?`)) {
-            triggerMerge(sourceId, targetId);
-          }
+          setPendingMerge({ source: sourceId, target: targetId });
         }
       }
 
@@ -329,46 +328,45 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
   return (
     <div className="flex-1 overflow-hidden h-full w-full relative">
       {/* View Switcher Controls */}
-      <div className="absolute top-4 left-4 z-10 flex gap-1 rounded-xl bg-white/80 p-1 shadow-lg backdrop-blur-md dark:bg-gray-900/80">
+      <div className="absolute top-6 left-6 z-10 flex gap-1 rounded-2xl glass-surface p-1.5 shadow-2xl">
         <button
           onClick={() => setView('branch')}
           className={clsx(
-            'flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all',
+            'flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold transition-all active:scale-95',
             view === 'branch'
-              ? 'bg-gray-900 text-white shadow-md dark:bg-white dark:text-gray-900'
-              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white'
+              ? 'bg-slate-900 text-white shadow-lg dark:bg-white dark:text-slate-950'
+              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white'
           )}
         >
-          <GitBranch className="h-3.5 w-3.5" />
+          <GitBranch className="h-4 w-4" />
           Branch View
         </button>
         <button
           onClick={() => setView('commit')}
           className={clsx(
-            'flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all',
+            'flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold transition-all active:scale-95',
             view === 'commit'
-              ? 'bg-gray-900 text-white shadow-md dark:bg-white dark:text-gray-900'
-              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white'
+              ? 'bg-slate-900 text-white shadow-lg dark:bg-white dark:text-slate-950'
+              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white'
           )}
         >
-          <GitCommit className="h-3.5 w-3.5" />
+          <GitCommit className="h-4 w-4" />
           Commit View
         </button>
 
-        <div className="mx-2 my-auto h-6 w-[1px] bg-gray-200 dark:bg-gray-700" />
+        <div className="mx-2 my-auto h-6 w-[1px] bg-slate-200 dark:bg-slate-800" />
         
         <button
           onClick={() => setIsRebaseMode(!isRebaseMode)}
           disabled={view !== 'commit'}
           className={clsx(
-            'flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed',
+            'flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold transition-all disabled:opacity-30 active:scale-95',
             isRebaseMode
-              ? 'bg-orange-500 text-white shadow-md'
-              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white'
+              ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20'
+              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white'
           )}
-          title={view !== 'commit' ? 'Switch to Commit View to enable Rebase Mode' : 'Toggle Interactive Rebase'}
         >
-          <RotateCcw className={clsx('h-3.5 w-3.5', isRebaseMode && 'animate-spin-slow')} />
+          <RotateCcw className={clsx('h-4 w-4', isRebaseMode && 'animate-spin-slow')} />
           Rebase Mode
         </button>
       </div>
@@ -389,8 +387,11 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
         defaultEdgeOptions={{ type: 'smoothstep' }}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e5e7eb" />
-        <Controls showInteractive={false} />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="rgba(148, 163, 184, 0.15)" />
+        <Controls 
+          showInteractive={false} 
+          className="!glass-surface !bg-transparent !border-0 !shadow-2xl !rounded-2xl !p-1"
+        />
         <MiniMap
           nodeColor={(node) => {
             const b = node.data as any;
@@ -406,12 +407,15 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
       </ReactFlow>
 
       {/* Hint overlay */}
-      <div className="pointer-events-none absolute bottom-4 left-4 rounded-lg bg-white/80 px-3 py-1.5 text-xs text-gray-400 shadow backdrop-blur-sm">
-        {isRebaseMode 
-          ? 'Drag a commit onto another to reorder/squash' 
-          : view === 'branch'
-            ? 'Drag a branch handle to another branch to merge'
-            : 'Visualize the full granular commit history'}
+      <div className="pointer-events-none absolute bottom-8 left-8 rounded-2xl glass-surface border-slate-100 dark:border-slate-800 px-4 py-2 text-[11px] font-bold text-slate-400 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <div className="flex items-center gap-2">
+           <div className="h-1.5 w-1.5 rounded-full bg-brand-primary animate-pulse" />
+           {isRebaseMode 
+             ? 'Drag a commit onto another to reorder/squash' 
+             : view === 'branch'
+               ? 'Connect branch handles to trigger a smart merge'
+               : 'Topological commit history is now active'}
+        </div>
       </div>
 
       {/* Time Machine Slider */}
@@ -424,6 +428,21 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
         isPlaying={isPlaying}
         label={view === 'commit' ? 'Analyzing granular history' : 'Branch Evolution'}
       />
+
+      {/* Merge Summary Modal */}
+      {pendingMerge && (
+         <MergeSummaryModal
+            owner={owner}
+            repo={repo}
+            source={pendingMerge.source}
+            target={pendingMerge.target}
+            onConfirm={() => {
+               triggerMerge(pendingMerge.source, pendingMerge.target);
+               setPendingMerge(null);
+            }}
+            onCancel={() => setPendingMerge(null)}
+         />
+      )}
     </div>
   );
 }
