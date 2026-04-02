@@ -143,6 +143,8 @@ export class GraphService {
           message: commit.message,
           author: commit.author,
           timestamp: commit.timestamp,
+          branchName: primaryBranch,
+          ciStatus: commit.ciStatus || 'none',
         },
       });
 

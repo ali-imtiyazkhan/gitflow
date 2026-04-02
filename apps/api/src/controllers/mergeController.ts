@@ -2,7 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { GitHubService } from '@/services/githubService';
 import { MergeService } from '@/services/mergeService';
 import { AIService } from '@/services/aiService';
-import { ApiResponse, MergeRequest, ResolveConflictRequest, ConflictHunk } from '@gitflow/shared';
+import { RebaseService } from '@/services/rebaseService';
+import { ApiResponse, MergeRequest, ResolveConflictRequest, ConflictHunk, RebaseRequest } from '@gitflow/shared';
 import { BadRequestError, NotFoundError, UnauthorizedError } from '@/utils/apiError';
 import { prisma } from '@/lib/prisma';
 import { Server } from 'socket.io';
@@ -10,6 +11,7 @@ import { Server } from 'socket.io';
 export class MergeController {
   private mergeService = new MergeService();
   private aiService = new AIService();
+  private rebaseService = new RebaseService();
 
   // Helper to get socket.io instance
   private getIO(req: Request): Server {
@@ -241,6 +243,54 @@ export class MergeController {
         success: true,
         data: {
           analysis
+        }
+      };
+      res.json(response);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async rebase(req: Request, res: Response, next: NextFunction) {
+    try {
+      const owner = req.params.owner as string;
+      const repo = req.params.repo as string;
+      const rebaseRequest = req.body as RebaseRequest;
+      const token = this.getAccessToken(req);
+      const githubService = new GitHubService(token);
+      const io = this.getIO(req);
+
+      const newHeadSha = await this.rebaseService.performRebase(githubService, owner, repo, rebaseRequest);
+
+      // Notify clients
+      io.to(`${owner}/${repo}`).emit('graph:updated', { type: 'rebase', newHeadSha });
+
+      const response: ApiResponse<any> = {
+        success: true,
+        data: {
+          newHeadSha
+        }
+      };
+      res.json(response);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async getCommitStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const owner = req.params.owner as string;
+      const repo = req.params.repo as string;
+      const ref = req.params.ref as string;
+      const token = this.getAccessToken(req);
+      const githubService = new GitHubService(token);
+
+      const status = await githubService.getCombinedStatus(owner, repo, ref);
+
+      const response: ApiResponse<any> = {
+        success: true,
+        data: {
+          status
         }
       };
       res.json(response);

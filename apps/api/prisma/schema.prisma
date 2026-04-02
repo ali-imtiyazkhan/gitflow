@@ -12,8 +12,8 @@ model Conflict {
   repo          String
   sourceBranch  String
   targetBranch  String
-  status        String   @default("open") // open, resolved, aborted
-  hunks         Json     // Array of ConflictHunk objects
+  status        String   @default("open")
+  hunks         Json  
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

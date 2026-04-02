@@ -21,6 +21,19 @@ export function CommitNode({ data }: { data: any }) {
            'h-5 w-5',
            isHead ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-600'
         )} />
+
+        {/* CI Status Indicator Dot */}
+        {data.ciStatus && data.ciStatus !== 'none' && (
+          <div 
+            className={clsx(
+              'absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-white transition-all',
+              data.ciStatus === 'success' && 'bg-green-500',
+              data.ciStatus === 'failure' && 'bg-red-500',
+              data.ciStatus === 'pending' && 'bg-amber-400 animate-pulse'
+            )}
+            title={`CI Status: ${data.ciStatus}`}
+          />
+        )}
         
         {/* SHA Tooltip */}
         <div className="absolute -top-10 left-1/2 -translate-x-1/2 scale-0 group-hover:scale-100 transition-transform bg-gray-900 text-white text-[10px] font-mono px-2 py-1 rounded shadow-lg whitespace-nowrap z-50">

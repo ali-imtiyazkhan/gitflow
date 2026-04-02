@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Branch, MergeRequest, ResolveConflictRequest, ApiResponse, MergeConflict, BranchGraph, ConflictHunk } from '@gitflow/shared';
+import type { Branch, MergeRequest, ResolveConflictRequest, ApiResponse, MergeConflict, BranchGraph, ConflictHunk, RebaseRequest, CIStatus } from '@gitflow/shared';
 
 const apiClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000',
@@ -108,6 +108,31 @@ export async function fetchGlobalAnalysis(
   );
   if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'Analysis failed');
   return res.data.data.analysis;
+}
+
+export async function fetchCommitStatus(
+  owner: string,
+  repo: string,
+  ref: string
+): Promise<CIStatus> {
+  const res = await apiClient.get<ApiResponse<{ status: CIStatus }>>(
+    `/api/v1/repos/${owner}/${repo}/status/${ref}`
+  );
+  if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'Failed to fetch status');
+  return res.data.data.status;
+}
+
+export async function performRebase(
+  owner: string,
+  repo: string,
+  request: RebaseRequest
+): Promise<string> {
+  const res = await apiClient.post<ApiResponse<{ newHeadSha: string }>>(
+    `/api/v1/repos/${owner}/${repo}/rebase`,
+    request
+  );
+  if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'Rebase failed');
+  return res.data.data.newHeadSha;
 }
 
 export default apiClient;

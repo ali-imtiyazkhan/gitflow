@@ -2,9 +2,9 @@
 
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { GitBranch, AlertTriangle, CheckCircle, Clock, Trash2 } from 'lucide-react';
+import { GitBranch, AlertTriangle, CheckCircle, Clock, Trash2, Loader2, ShieldCheck, ShieldAlert, Shield } from 'lucide-react';
 import { clsx } from 'clsx';
-import type { Branch } from '@gitflow/shared';
+import type { Branch, CIStatus } from '@gitflow/shared';
 import { relativeTime, shortSha } from '@gitflow/shared';
 
 type BranchNodeData = Branch & { selected?: boolean; isTarget?: boolean };
@@ -17,6 +17,13 @@ const statusConfig = {
   conflict: { color: 'border-red-300 bg-red-50',      icon: AlertTriangle,  iconColor: 'text-red-500'    },
   merged:   { color: 'border-purple-300 bg-purple-50',icon: CheckCircle,    iconColor: 'text-purple-500' },
   stale:    { color: 'border-gray-200 bg-gray-50',    icon: Clock,          iconColor: 'text-gray-300'   },
+};
+
+const ciConfig: Record<CIStatus, { color: string; icon: any; label: string; animate?: boolean }> = {
+  success: { color: 'bg-green-100 text-green-700 border-green-200', icon: ShieldCheck, label: 'Passing' },
+  failure: { color: 'bg-red-100 text-red-700 border-red-200', icon: ShieldAlert, label: 'Failed' },
+  pending: { color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Loader2, label: 'Running', animate: true },
+  none:    { color: 'bg-gray-100 text-gray-500 border-gray-200', icon: Shield, label: 'No CI' },
 };
 
 export const BranchNode = memo(function BranchNode({ data, selected }: NodeProps) {
@@ -38,6 +45,24 @@ export const BranchNode = memo(function BranchNode({ data, selected }: NodeProps
       {/* Handles */}
       <Handle type="target" position={Position.Left}  className="!h-3 !w-3 !border-2 !border-white !bg-gray-400" />
       <Handle type="source" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-gray-400" />
+
+      {/* CI Status Badge */}
+      {branch.ciStatus && branch.ciStatus !== 'none' && (
+        <div className={clsx(
+          'absolute -top-3 -right-2 flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold shadow-sm ring-2 ring-white transition-all hover:scale-105',
+          ciConfig[branch.ciStatus].color
+        )}>
+          {branch.ciStatus === 'pending' ? (
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+          ) : (
+            (() => {
+                const CIIcon = ciConfig[branch.ciStatus].icon;
+                return <CIIcon className="h-2.5 w-2.5" />;
+            })()
+          )}
+          {ciConfig[branch.ciStatus].label}
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center gap-1.5">

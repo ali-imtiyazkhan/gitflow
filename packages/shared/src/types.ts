@@ -1,4 +1,4 @@
-// ─── Branch Types ───────────────────────────────────────────────────────────
+// Branch Types
 
 export type BranchType = 'main' | 'develop' | 'feature' | 'hotfix' | 'release' | 'chore';
 
@@ -10,6 +10,8 @@ export type BranchStatus =
   | 'conflict'
   | 'merged'
   | 'stale';
+
+export type CIStatus = 'success' | 'failure' | 'pending' | 'none';
 
 export interface Branch {
   id: string;
@@ -25,6 +27,7 @@ export interface Branch {
   commits: Commit[];
   isProtected: boolean;
   isDraft: boolean;
+  ciStatus?: CIStatus;
   /** UI canvas position */
   position?: { x: number; y: number };
 }
@@ -35,6 +38,7 @@ export interface Commit {
   author: string;
   authorAvatar?: string;
   timestamp: string;
+  ciStatus?: CIStatus;
   parents: string[];
   additions: number;
   deletions: number;
@@ -196,4 +200,10 @@ export interface ResolveConflictRequest {
     filePath: string;
     content: string;
   }>;
+}
+
+export interface RebaseRequest {
+  sourceBranch: string;
+  targetBranch: string;
+  commits: string[];
 }

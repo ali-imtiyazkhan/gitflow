@@ -13,19 +13,19 @@ import {
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { AlertCircle, Loader2, GitBranch, GitCommit, Layers, MoreHorizontal } from 'lucide-react';
+import { AlertCircle, Loader2, GitBranch, GitCommit, RotateCcw } from 'lucide-react';
 import { clsx } from 'clsx';
 import { BranchNode } from './BranchNode';
 import { CommitNode } from './CommitNode';
 import { useBranchGraph } from '@/hooks/useBranchGraph';
 import { useMerge } from '@/hooks/useMerge';
-import { deleteBranch } from '@/lib/apiClient';
+import { deleteBranch, performRebase } from '@/lib/apiClient';
 import { useGraphStore } from '@/store/graphStore';
 import { useSocket } from '@/hooks/useSocket';
-import type { Branch } from '@gitflow/shared';
+import { TimeMachineSlider } from './TimeMachineSlider';
 import { GRAPH_DEFAULTS } from '@gitflow/shared';
 
-const NODE_TYPES = { 
+const NODE_TYPES = {
   branch: BranchNode,
   commit: CommitNode
 };
@@ -41,6 +41,13 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
   const { isLoading, error, branches, graph, refresh } = useBranchGraph(owner, repo, view);
   const { triggerMerge } = useMerge(owner, repo);
   const { selectBranch, updateNodePosition } = useGraphStore();
+
+  // Time Machine State
+  const [timeMachineValue, setTimeMachineValue] = useState<number>(100);
+  const [isPlaying, setIsPlaying] = useState(false);
+  
+  // Rebase Mode State
+  const [isRebaseMode, setIsRebaseMode] = useState(false);
 
   // Listen for real-time updates
   const socket = useSocket(`${owner}/${repo}`);
@@ -59,10 +66,27 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
     };
   }, [socket, refresh]);
 
+  // Time Machine Animation Loop
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isPlaying) {
+      interval = setInterval(() => {
+        setTimeMachineValue((prev) => {
+          if (prev >= 100) {
+            setIsPlaying(false);
+            return 100;
+          }
+          return prev + 1;
+        });
+      }, 100);
+    }
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
   const handleDeleteBranch = useCallback(
     async (branchName: string) => {
       const confirmMessage = `Are you sure you want to permanently delete the branch "${branchName}"? This action cannot be undone on GitHub.`;
-      
+
       if (window.confirm(confirmMessage)) {
         try {
           await deleteBranch(owner, repo, branchName);
@@ -76,10 +100,46 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
   );
 
   // Convert domain branches → React Flow nodes
-  const initialNodes = useMemo<Node[]>(() =>
-    graph.nodes.map((n) => {
+  const initialNodes = useMemo<Node[]>(() => {
+    // 1. Calculate time threshold if time machine is active
+    const maxCommits = graph.nodes.filter(n => n.type === 'commit').length;
+    const thresholdIndex = Math.floor((timeMachineValue / 100) * maxCommits);
+    
+    // Sort all commit nodes by timestamp (newest to oldest or vice versa)
+    const commitNodes = [...graph.nodes]
+      .filter(n => n.type === 'commit')
+      .sort((a, b) => new Date(a.data?.timestamp).getTime() - new Date(b.data?.timestamp).getTime());
+
+    const visibleCommitShas = new Set(commitNodes.slice(0, thresholdIndex).map(n => n.id));
+
+    // 2. Map nodes
+    return graph.nodes.map((n) => {
+      const position = { x: n.x, y: n.y };
+
+      // Filter out commits that haven't "happened" yet in the time machine
+      if (n.type === 'commit' && !visibleCommitShas.has(n.id)) {
+        return { 
+          id: n.id, 
+          type: 'commit', 
+          position, 
+          hidden: true,
+          data: { ...n.data, commitSha: n.commitSha }
+        };
+      }
+
       if (n.type === 'branch') {
         const branch = branches.find((b) => b.id === n.branchId);
+        // Hide branch labels if their head commit is hidden (only in commit view)
+        if (view === 'commit' && branch && !visibleCommitShas.has(branch.sha)) {
+          return { 
+            id: n.id, 
+            type: 'branch', 
+            position, 
+            hidden: true,
+            data: { ...branch, onDelete: handleDeleteBranch }
+          };
+        }
+
         return {
           id: n.id,
           type: 'branch',
@@ -87,7 +147,7 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
             ...branch,
             onDelete: handleDeleteBranch,
           },
-          position: { x: n.x, y: n.y },
+          position,
           draggable: true,
         };
       } else {
@@ -99,30 +159,32 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
             commitSha: n.commitSha,
             isHead: branches.some(b => b.sha === n.commitSha),
           },
-          position: { x: n.x, y: n.y },
+          position,
           draggable: true,
         };
       }
-    }),
-    [branches, graph.nodes, handleDeleteBranch]
-  );
+    });
+  }, [branches, graph.nodes, handleDeleteBranch, timeMachineValue, view]);
 
   // Convert domain edges → React Flow edges
-  const initialEdges = useMemo<Edge[]>(() =>
-    graph.edges.map((e) => ({
-      id: e.id,
-      source: e.fromId,
-      target: e.toId,
-      animated: e.type === 'merge-into' || e.type === 'rebase-onto',
-      style: { 
-        stroke: e.type === 'branch-head' ? '#3b82f6' : '#94a3b8', 
-        strokeWidth: e.type === 'branch-head' ? 2 : 1.5,
-        strokeDasharray: e.type === 'branch-head' ? '5 5' : '0'
-      },
-      type: 'smoothstep',
-    })),
-    [graph.edges]
-  );
+  const initialEdges = useMemo<Edge[]>(() => {
+    const visibleNodeIds = new Set(initialNodes.filter(n => !(n as any).hidden).map(n => n.id));
+
+    return graph.edges
+      .filter(e => visibleNodeIds.has(e.fromId) && visibleNodeIds.has(e.toId))
+      .map((e) => ({
+        id: e.id,
+        source: e.fromId,
+        target: e.toId,
+        animated: e.type === 'merge-into' || e.type === 'rebase-onto',
+        style: {
+          stroke: e.type === 'branch-head' ? '#3b82f6' : '#94a3b8',
+          strokeWidth: e.type === 'branch-head' ? 2 : 1.5,
+          strokeDasharray: e.type === 'branch-head' ? '5 5' : '0'
+        },
+        type: 'smoothstep',
+      }));
+  }, [graph.edges, initialNodes]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -185,18 +247,45 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
   );
 
   const onNodeDragStop = useCallback(
-    (_: React.MouseEvent, node: Node) => {
+    async (_: React.MouseEvent, node: Node) => {
       updateNodePosition(node.id, node.position.x, node.position.y);
 
       // Find the node that was marked as target during drag
       const targetNode = nodes.find((n) => (n.data as any).isTarget);
 
       if (targetNode) {
-        const sourceName = (node.data as any).name;
-        const targetName = (targetNode.data as any).name;
+        const sourceId = node.id;
+        const targetId = targetNode.id;
+        const sourceType = node.type;
+        const targetType = targetNode.type;
 
-        if (window.confirm(`Do you want to merge "${sourceName}" into "${targetName}"?`)) {
-          triggerMerge(node.id, targetNode.id);
+        // ─── Rebase / Squash Logic (Commit View) ──────────────────────────────
+        if (isRebaseMode && sourceType === 'commit' && targetType === 'commit') {
+          const sourceMsg = (node.data as any).message;
+          const targetMsg = (targetNode.data as any).message;
+
+          if (window.confirm(`Do you want to rebase commit "${sourceMsg}" onto "${targetMsg}"?`)) {
+             try {
+               await performRebase(owner, repo, {
+                 sourceBranch: (node.data as any).branchName || 'unknown', // We might need to track which branch a commit belongs to
+                 targetBranch: (targetNode.data as any).branchName || 'unknown',
+                 commits: [node.id] // Just replaying one commit for now
+               });
+               refresh();
+               alert('Rebase successful!');
+             } catch (err: any) {
+               alert(`Rebase failed: ${err.message}`);
+             }
+          }
+        } 
+        // ─── Standard Merge Logic (Branch View) ──────────────────────────────
+        else if (!isRebaseMode && sourceType === 'branch' && targetType === 'branch') {
+          const sourceName = (node.data as any).name;
+          const targetName = (targetNode.data as any).name;
+
+          if (window.confirm(`Do you want to merge "${sourceName}" into "${targetName}"?`)) {
+            triggerMerge(sourceId, targetId);
+          }
         }
       }
 
@@ -208,7 +297,7 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
         }))
       );
     },
-    [nodes, setNodes, updateNodePosition, triggerMerge]
+    [nodes, setNodes, updateNodePosition, triggerMerge, isRebaseMode]
   );
 
   const onNodeClick = useCallback(
@@ -245,8 +334,8 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
           onClick={() => setView('branch')}
           className={clsx(
             'flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all',
-            view === 'branch' 
-              ? 'bg-gray-900 text-white shadow-md dark:bg-white dark:text-gray-900' 
+            view === 'branch'
+              ? 'bg-gray-900 text-white shadow-md dark:bg-white dark:text-gray-900'
               : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white'
           )}
         >
@@ -257,13 +346,30 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
           onClick={() => setView('commit')}
           className={clsx(
             'flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all',
-            view === 'commit' 
-              ? 'bg-gray-900 text-white shadow-md dark:bg-white dark:text-gray-900' 
+            view === 'commit'
+              ? 'bg-gray-900 text-white shadow-md dark:bg-white dark:text-gray-900'
               : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white'
           )}
         >
           <GitCommit className="h-3.5 w-3.5" />
           Commit View
+        </button>
+
+        <div className="mx-2 my-auto h-6 w-[1px] bg-gray-200 dark:bg-gray-700" />
+        
+        <button
+          onClick={() => setIsRebaseMode(!isRebaseMode)}
+          disabled={view !== 'commit'}
+          className={clsx(
+            'flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed',
+            isRebaseMode
+              ? 'bg-orange-500 text-white shadow-md'
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white'
+          )}
+          title={view !== 'commit' ? 'Switch to Commit View to enable Rebase Mode' : 'Toggle Interactive Rebase'}
+        >
+          <RotateCcw className={clsx('h-3.5 w-3.5', isRebaseMode && 'animate-spin-slow')} />
+          Rebase Mode
         </button>
       </div>
 
@@ -301,10 +407,23 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
 
       {/* Hint overlay */}
       <div className="pointer-events-none absolute bottom-4 left-4 rounded-lg bg-white/80 px-3 py-1.5 text-xs text-gray-400 shadow backdrop-blur-sm">
-        {view === 'branch' 
-          ? 'Drag a branch handle to another branch to merge'
-          : 'Visualize the full granular commit history'}
+        {isRebaseMode 
+          ? 'Drag a commit onto another to reorder/squash' 
+          : view === 'branch'
+            ? 'Drag a branch handle to another branch to merge'
+            : 'Visualize the full granular commit history'}
       </div>
+
+      {/* Time Machine Slider */}
+      <TimeMachineSlider
+        min={0}
+        max={100}
+        value={timeMachineValue}
+        onChange={setTimeMachineValue}
+        onPlayPause={() => setIsPlaying(!isPlaying)}
+        isPlaying={isPlaying}
+        label={view === 'commit' ? 'Analyzing granular history' : 'Branch Evolution'}
+      />
     </div>
   );
 }
