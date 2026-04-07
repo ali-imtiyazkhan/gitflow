@@ -127,30 +127,40 @@ Keep the explanation under 3 sentences.
   /**
    * Analyzes all conflicts in a merge and provides a summary.
    */
-  async analyzeAllConflicts(conflicts: ConflictHunk[]): Promise<string> {
+  async analyzeAllConflicts(conflicts: ConflictHunk[]): Promise<AIAnalysis> {
     const conflictSummary = conflicts.map(h => `- ${h.filePath}: Lines ${h.lineStart}-${h.lineEnd}`).join('\n');
     
     const prompt = `
 You are a senior Git engineer. Analyze the following merge conflicts and provide a high-level summary of the architectural impact and risks.
+
+Respond ONLY with valid JSON exactly matching this structure:
+{ 
+  "bullets": ["detailed point 1", "detailed point 2", ...], 
+  "riskLevel": "low"|"medium"|"high",
+  "summaryText": "A concise 1-2 sentence overview of what's happening in this merge, identifying potential logic errors or major refactors."
+}
 
 Conflicts:
 ${conflictSummary}
 
 Example Details (First few hunks):
 ${conflicts.slice(0, 3).map(h => `File: ${h.filePath}\nOurs: ${h.oursContent}\nTheirs: ${h.theirsContent}`).join('\n\n')}
-
-Provide a concise (2-3 paragraph) summary of what's happening in this merge, identifying potential logic errors or major refactors.
 `;
 
     try {
       return await withRetry(async () => {
         const result = await this.model.generateContent(prompt);
         const response = await result.response;
-        return response.text().trim();
+        const text = stripCodeFences(response.text());
+        return JSON.parse(text) as AIAnalysis;
       });
     } catch (error) {
        console.error('AIService Error:', error);
-       return 'Failed to analyze all conflicts.';
+       return {
+         bullets: ['Failed to analyze all conflicts.'],
+         riskLevel: 'high' as const,
+         summaryText: 'Merge analysis unavailable.'
+       };
     }
   }
 

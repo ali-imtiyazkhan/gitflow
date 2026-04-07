@@ -139,8 +139,8 @@ export async function fetchGlobalAnalysis(
   owner: string,
   repo: string,
   hunks: ConflictHunk[]
-): Promise<string> {
-  const res = await apiClient.post<ApiResponse<{ analysis: string }>>(
+): Promise<AIAnalysis> {
+  const res = await apiClient.post<ApiResponse<{ analysis: AIAnalysis }>>(
     `/api/v1/repos/${owner}/${repo}/conflicts/analyze`,
     { hunks }
   );
