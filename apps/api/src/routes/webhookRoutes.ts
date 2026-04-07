@@ -8,15 +8,34 @@ import type { WSEventType } from '@gitflow/shared';
 
 export const webhookRouter = Router();
 
-function verifyGitHubSignature(req: Request): boolean {
+/**
+ * Extend Request to carry the raw body buffer for HMAC verification.
+ * The raw body is attached by the `verify` callback in express.json()
+ * configured in index.ts.
+ */
+interface RawBodyRequest extends Request {
+  rawBody?: Buffer;
+}
+
+function verifyGitHubSignature(req: RawBodyRequest): boolean {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   if (!secret) return true; // skip if not configured
   const sig = req.headers['x-hub-signature-256'] as string;
   if (!sig) return false;
+
+  const rawBody = req.rawBody;
+  if (!rawBody) return false;
+
   const hmac = crypto.createHmac('sha256', secret);
-  hmac.update(JSON.stringify(req.body));
+  hmac.update(rawBody);
   const digest = `sha256=${hmac.digest('hex')}`;
-  return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(digest));
+
+  // Constant-time comparison to prevent timing attacks
+  try {
+    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(digest));
+  } catch {
+    return false; // lengths differ
+  }
 }
 
 const githubEventToWSType: Record<string, WSEventType> = {
@@ -28,9 +47,9 @@ const githubEventToWSType: Record<string, WSEventType> = {
 };
 
 // POST /api/v1/webhooks/github — receive GitHub webhook events
-webhookRouter.post('/webhooks/github', async (req: Request, res: Response, next: NextFunction) => {
+webhookRouter.post('/github', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    if (!verifyGitHubSignature(req)) {
+    if (!verifyGitHubSignature(req as RawBodyRequest)) {
       res.status(401).json({ error: 'Invalid signature' });
       return;
     }
@@ -105,3 +124,4 @@ webhookRouter.post('/:owner/:repo/events/:eventId/replay', (req: Request, res: R
 });
 
 export default webhookRouter;
+

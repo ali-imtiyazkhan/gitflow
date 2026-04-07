@@ -4,7 +4,8 @@ import { RebaseRequest } from '@gitflow/shared';
 export class RebaseService {
   /**
    * Replays a set of commits onto a target branch.
-   * This is a simplified "visual rebase" implementation.
+   * After replaying, the SOURCE branch is updated to point to the new head
+   * (standard rebase behavior: the feature branch moves on top of target).
    */
   async performRebase(
     githubService: GitHubService,
@@ -13,10 +14,10 @@ export class RebaseService {
     request: RebaseRequest
   ): Promise<string> {
     const { sourceBranch, targetBranch, commits: commitShas } = request;
+    const octokit = githubService.getOctokit();
 
-    // 1. Get the current head of the target branch
-    const targetRepo = await githubService.getRepo(owner, repo);
-    const { data: targetRef } = await (githubService as any).octokit.rest.git.getRef({
+    // 1. Get the current head of the target branch (the new base)
+    const { data: targetRef } = await octokit.rest.git.getRef({
       owner,
       repo,
       ref: `heads/${targetBranch}`,
@@ -24,18 +25,17 @@ export class RebaseService {
     
     let currentParentSha = targetRef.object.sha;
 
-    // 2. Replay each commit
-    // Note: This implementation assumes the commits are already in the desired order in the request.
+    // 2. Replay each commit onto the target
     for (const sha of commitShas) {
       // Get the original commit details
-      const { data: originalCommit } = await (githubService as any).octokit.rest.git.getCommit({
+      const { data: originalCommit } = await octokit.rest.git.getCommit({
         owner,
         repo,
         commit_sha: sha,
       });
 
       // Create a new commit with the same tree but the new parent
-      const { data: newCommit } = await (githubService as any).octokit.rest.git.createCommit({
+      const { data: newCommit } = await octokit.rest.git.createCommit({
         owner,
         repo,
         message: originalCommit.message,
@@ -48,14 +48,13 @@ export class RebaseService {
       currentParentSha = newCommit.sha;
     }
 
-    // 3. Update the target branch to point to the last replayed commit
-    // WARNING: This is a force update if we are moving the target branch head significantly.
-    // In a real rebase, we often update the *source* branch to the new head.
-    // But for this "Visual Rebase" tool, we might be rebasing a feature branch onto develop.
-    await (githubService as any).octokit.rest.git.updateRef({
+    // 3. Update the SOURCE branch to point to the last replayed commit.
+    //    This is the correct rebase behavior: the feature branch is moved
+    //    on top of the target branch. We never modify the target.
+    await octokit.rest.git.updateRef({
       owner,
       repo,
-      ref: `heads/${targetBranch}`,
+      ref: `heads/${sourceBranch}`,
       sha: currentParentSha,
       force: true, // Force update since we are rewriting history
     });
@@ -74,8 +73,10 @@ export class RebaseService {
     commitShas: string[],
     newMessage: string
   ): Promise<string> {
+    const octokit = githubService.getOctokit();
+
     // 1. Get the latest commit of the target branch
-    const { data: targetRef } = await (githubService as any).octokit.rest.git.getRef({
+    const { data: targetRef } = await octokit.rest.git.getRef({
       owner,
       repo,
       ref: `heads/${targetBranch}`,
@@ -85,14 +86,14 @@ export class RebaseService {
 
     // 2. Use the tree of the LAST commit in the squash list (the state we want to achieve)
     const lastSha = commitShas[commitShas.length - 1];
-    const { data: lastCommit } = await (githubService as any).octokit.rest.git.getCommit({
+    const { data: lastCommit } = await octokit.rest.git.getCommit({
       owner,
       repo,
       commit_sha: lastSha,
     });
 
     // 3. Create the squashed commit
-    const { data: squashedCommit } = await (githubService as any).octokit.rest.git.createCommit({
+    const { data: squashedCommit } = await octokit.rest.git.createCommit({
       owner,
       repo,
       message: newMessage,
@@ -101,7 +102,7 @@ export class RebaseService {
     });
 
     // 4. Update the reference
-    await (githubService as any).octokit.rest.git.updateRef({
+    await octokit.rest.git.updateRef({
       owner,
       repo,
       ref: `heads/${targetBranch}`,

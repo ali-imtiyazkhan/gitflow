@@ -35,7 +35,7 @@ export default function ConflictsPage() {
 
       try {
         setAuthToken(session.accessToken);
-        const data = await fetchAllConflicts();
+        const data = await fetchAllConflicts('_all', '_all') as unknown as ConflictItem[];
         setConflicts(data);
       } catch (err: any) {
         setError(err.message || 'Connection to API failed');

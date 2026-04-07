@@ -3,8 +3,8 @@ import { GitHubService } from '@/services/githubService';
 import { MergeService } from '@/services/mergeService';
 import { AIService } from '@/services/aiService';
 import { RebaseService } from '@/services/rebaseService';
-import { ApiResponse, MergeRequest, ResolveConflictRequest, ConflictHunk, RebaseRequest } from '@gitflow/shared';
-import { BadRequestError, NotFoundError, UnauthorizedError } from '@/utils/apiError';
+import { ApiResponse, MergeRequest, ResolveConflictRequest, ConflictHunk, RebaseRequest, MergeConflict, AISuggestion, AIAnalysis } from '@gitflow/shared';
+import { BadRequestError, NotFoundError } from '@/utils/apiError';
 import { prisma } from '@/lib/prisma';
 import { Server } from 'socket.io';
 
@@ -18,13 +18,10 @@ export class MergeController {
     return req.app.get('io');
   }
 
-  // Helper to extract access token from headers
-  private getAccessToken(req: Request): string {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedError('Missing or invalid authorization header');
-    }
-    return authHeader.split(' ')[1];
+  // Helper to get GitHubService from auth middleware
+  private getGitHubService(req: Request): GitHubService {
+    const token = (req as any).accessToken;
+    return new GitHubService(token);
   }
 
   // Merge 
@@ -39,8 +36,7 @@ export class MergeController {
         throw new BadRequestError('Source and target branches are required');
       }
 
-      const token = this.getAccessToken(req);
-      const gitHubService = new GitHubService(token);
+      const gitHubService = this.getGitHubService(req);
       const io = this.getIO(req);
 
       // Notify clients that merge has started
@@ -72,7 +68,7 @@ export class MergeController {
           target: savedConflict.targetBranch,
         });
 
-        const response: ApiResponse<any> = {
+        const response: ApiResponse<{ merged: boolean; conflictId: string }> = {
           success: true,
           data: {
             merged: false,
@@ -88,7 +84,7 @@ export class MergeController {
         target: mergeRequest.targetBranch,
       });
 
-      const response: ApiResponse<any> = {
+      const response: ApiResponse<{ merged: boolean }> = {
         success: true,
         data: {
           merged: true,
@@ -112,12 +108,14 @@ export class MergeController {
           throw new NotFoundError(`Conflict with ID ${id} not found`);
        }
 
-       const response: ApiResponse<any> = {
+       const response: ApiResponse<MergeConflict> = {
           success: true,
           data: {
              ...conflict,
-             files: conflict.hunks,
-          },
+             files: conflict.hunks as unknown as MergeConflict['files'],
+             createdAt: conflict.createdAt.toISOString(),
+             status: conflict.status as MergeConflict['status'],
+          } as MergeConflict,
        };
        res.json(response);
     } catch (err) {
@@ -127,16 +125,31 @@ export class MergeController {
 
   async getAllConflicts(req: Request, res: Response, next: NextFunction) {
     try {
+      const { owner, repo } = req.params;
+
+      // Scope conflicts to the specific repository (skip if _all wildcard)
+      const whereClause: Record<string, unknown> = { status: 'open' };
+      if (owner && repo && owner !== '_all' && repo !== '_all') {
+        whereClause.owner = owner as string;
+        whereClause.repo = repo as string;
+      }
+
       const conflicts = await prisma.conflict.findMany({
-        where: { status: 'open' },
+        where: whereClause,
         orderBy: { createdAt: 'desc' },
       });
 
-      const response: ApiResponse<any[]> = {
+      const response: ApiResponse<(MergeConflict & { owner: string; repo: string })[]> = {
         success: true,
-        data: conflicts.map((c: any) => ({
-          ...c,
-          files: c.hunks,
+        data: conflicts.map((c) => ({
+          id: c.id,
+          owner: c.owner,
+          repo: c.repo,
+          sourceBranch: c.sourceBranch,
+          targetBranch: c.targetBranch,
+          files: c.hunks as unknown as MergeConflict['files'],
+          createdAt: c.createdAt.toISOString(),
+          status: c.status as MergeConflict['status'],
         })),
       };
       res.json(response);
@@ -165,8 +178,7 @@ export class MergeController {
        }
 
        // 1. Actually perform the commit to GitHub
-       const token = this.getAccessToken(req);
-       const githubService = new GitHubService(token);
+       const githubService = this.getGitHubService(req);
        
        const commitSha = await this.mergeService.resolveAndCommit(
           githubService,
@@ -191,7 +203,7 @@ export class MergeController {
           commitSha,
        });
 
-       const response: ApiResponse<any> = {
+       const response: ApiResponse<{ resolved: boolean; commitSha: string; message: string }> = {
           success: true,
           data: {
              resolved: true,
@@ -216,7 +228,7 @@ export class MergeController {
       const suggestion = await this.aiService.suggestResolution(hunk);
       const explanation = await this.aiService.explainConflict(hunk);
 
-      const response: ApiResponse<any> = {
+      const response: ApiResponse<AISuggestion & { explanation: string }> = {
         success: true,
         data: {
           ...suggestion,
@@ -235,7 +247,11 @@ export class MergeController {
         if (!hunks) throw new BadRequestError('Hunks are required');
         
         const message = await this.aiService.generateCommitMessage(hunks);
-        res.json({ success: true, data: { message } });
+        const response: ApiResponse<{ message: string }> = {
+          success: true,
+          data: { message },
+        };
+        res.json(response);
      } catch (err) {
         next(err);
      }
@@ -248,8 +264,7 @@ export class MergeController {
         
         if (!base || !head) throw new BadRequestError('Base and Head branches are required');
 
-        const token = this.getAccessToken(req);
-        const githubService = new GitHubService(token);
+        const githubService = this.getGitHubService(req);
 
         // 1. Get comparison diff from GitHub
         const comparison = await githubService.compareBranches(owner as string, repo as string, base, head);
@@ -260,7 +275,11 @@ export class MergeController {
         // 3. Generate AI summary
         const summary = await this.aiService.generateDiffSummary(diffText);
         
-        res.json({ success: true, data: { summary } });
+        const response: ApiResponse<{ summary: AIAnalysis }> = {
+          success: true,
+          data: { summary },
+        };
+        res.json(response);
      } catch (err) {
         next(err);
      }
@@ -276,7 +295,7 @@ export class MergeController {
 
       const analysis = await this.aiService.analyzeAllConflicts(hunks);
 
-      const response: ApiResponse<any> = {
+      const response: ApiResponse<{ analysis: string }> = {
         success: true,
         data: {
           analysis
@@ -293,8 +312,7 @@ export class MergeController {
       const owner = req.params.owner as string;
       const repo = req.params.repo as string;
       const rebaseRequest = req.body as RebaseRequest;
-      const token = this.getAccessToken(req);
-      const githubService = new GitHubService(token);
+      const githubService = this.getGitHubService(req);
       const io = this.getIO(req);
 
       const newHeadSha = await this.rebaseService.performRebase(githubService, owner, repo, rebaseRequest);
@@ -302,7 +320,7 @@ export class MergeController {
       // Notify clients
       io.to(`${owner}/${repo}`).emit('graph:updated', { type: 'rebase', newHeadSha });
 
-      const response: ApiResponse<any> = {
+      const response: ApiResponse<{ newHeadSha: string }> = {
         success: true,
         data: {
           newHeadSha
@@ -319,12 +337,11 @@ export class MergeController {
       const owner = req.params.owner as string;
       const repo = req.params.repo as string;
       const ref = req.params.ref as string;
-      const token = this.getAccessToken(req);
-      const githubService = new GitHubService(token);
+      const githubService = this.getGitHubService(req);
 
       const status = await githubService.getCombinedStatus(owner, repo, ref);
 
-      const response: ApiResponse<any> = {
+      const response: ApiResponse<{ status: string }> = {
         success: true,
         data: {
           status

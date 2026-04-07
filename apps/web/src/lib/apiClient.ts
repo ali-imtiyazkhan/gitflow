@@ -64,9 +64,9 @@ export async function fetchConflict(
   return res.data.data;
 }
 
-export async function fetchAllConflicts(): Promise<any[]> {
-  const res = await apiClient.get<ApiResponse<any[]>>(
-    '/api/v1/repos/conflicts/all'
+export async function fetchAllConflicts(owner: string, repo: string): Promise<(MergeConflict & { owner: string; repo: string })[]> {
+  const res = await apiClient.get<ApiResponse<(MergeConflict & { owner: string; repo: string })[]>>(
+    `/api/v1/repos/${owner}/${repo}/conflicts`
   );
   if (!res.data.success || !res.data.data) throw new Error(res.data.error?.message ?? 'Failed to fetch all conflicts');
   return res.data.data;
@@ -115,8 +115,8 @@ export async function fetchMergeSummary(
   repo: string,
   base: string,
   head: string
-): Promise<any> {
-  const res = await apiClient.post<ApiResponse<{ summary: any }>>(
+): Promise<AIAnalysis> {
+  const res = await apiClient.post<ApiResponse<{ summary: AIAnalysis }>>(
     `/api/v1/repos/${owner}/${repo}/merge-summary`,
     { base, head }
   );
@@ -139,8 +139,8 @@ export async function fetchGlobalAnalysis(
   owner: string,
   repo: string,
   hunks: ConflictHunk[]
-): Promise<any> {
-  const res = await apiClient.post<ApiResponse<{ analysis: any }>>(
+): Promise<string> {
+  const res = await apiClient.post<ApiResponse<{ analysis: string }>>(
     `/api/v1/repos/${owner}/${repo}/conflicts/analyze`,
     { hunks }
   );

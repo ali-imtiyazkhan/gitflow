@@ -2,19 +2,16 @@ import { Request, Response, NextFunction } from 'express';
 import { GitHubService } from '@/services/githubService';
 import { GraphService } from '@/services/graphService';
 import { AIService } from '@/services/aiService';
-import { ApiResponse } from '@gitflow/shared';
+import { ApiResponse, Branch, BranchGraph, StaleBranchReport } from '@gitflow/shared';
 
 export class RepoController {
   private graphService = new GraphService();
   private aiService = new AIService();
 
-  // Helper to extract access token from headers
-  private getAccessToken(req: Request): string {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new Error('Missing or invalid authorization header');
-    }
-    return authHeader.split(' ')[1];
+  // Helper to get GitHubService from auth middleware
+  private getGitHubService(req: Request): GitHubService {
+    const token = (req as any).accessToken;
+    return new GitHubService(token);
   }
 
   // ─── Branches ──────────────────────────────────────────────────────────────
@@ -22,12 +19,11 @@ export class RepoController {
   async getBranches(req: Request, res: Response, next: NextFunction) {
     try {
       const { owner, repo } = req.params;
-      const token = this.getAccessToken(req);
-      const gitHubService = new GitHubService(token);
+      const gitHubService = this.getGitHubService(req);
 
       const branches = await gitHubService.getRepoBranches(owner as string, repo as string);
 
-      const response: ApiResponse<any> = {
+      const response: ApiResponse<Branch[]> = {
         success: true,
         data: branches,
       };
@@ -43,8 +39,7 @@ export class RepoController {
     try {
       const { owner, repo } = req.params;
       const { view = 'branch' } = req.query;
-      const token = this.getAccessToken(req);
-      const gitHubService = new GitHubService(token);
+      const gitHubService = this.getGitHubService(req);
 
       const branches = await gitHubService.getRepoBranches(owner as string, repo as string);
       
@@ -52,7 +47,7 @@ export class RepoController {
         ? await this.graphService.generateCommitGraph(branches)
         : await this.graphService.generateGraph(branches);
 
-      const response: ApiResponse<any> = {
+      const response: ApiResponse<BranchGraph> = {
         success: true,
         data: graph,
       };
@@ -65,17 +60,16 @@ export class RepoController {
   async deleteBranch(req: Request, res: Response, next: NextFunction) {
     try {
       const { owner, repo, branchName } = req.params;
-      const token = this.getAccessToken(req);
-      const gitHubService = new GitHubService(token);
+      const gitHubService = this.getGitHubService(req);
 
       await gitHubService.deleteBranch(owner as string, repo as string, branchName as string);
 
-      const response: ApiResponse<any> = {
+      const response: ApiResponse<{ message: string }> = {
         success: true,
         data: { message: `Branch ${branchName} deleted successfully` },
       };
       res.json(response);
-    } catch (err: any) {
+    } catch (err) {
       next(err);
     }
   }
@@ -83,16 +77,16 @@ export class RepoController {
   async getBranchHealth(req: Request, res: Response, next: NextFunction) {
     try {
       const { owner, repo } = req.params;
-      const token = this.getAccessToken(req);
-      const gitHubService = new GitHubService(token);
+      const gitHubService = this.getGitHubService(req);
 
       const branches = await gitHubService.getRepoBranches(owner as string, repo as string);
       const report = await this.aiService.analyzeBranchHealth(branches);
 
-      res.json({
+      const response: ApiResponse<StaleBranchReport[]> = {
         success: true,
-        data: report
-      });
+        data: report,
+      };
+      res.json(response);
     } catch (err) {
       next(err);
     }

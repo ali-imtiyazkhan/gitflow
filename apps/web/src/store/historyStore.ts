@@ -2,8 +2,8 @@ import { create } from 'zustand';
 
 export interface Command {
   label: string;
-  execute: () => void;
-  undo: () => void;
+  execute: () => Promise<void> | void;
+  undo: () => Promise<void> | void;
 }
 
 interface HistoryState {
@@ -11,9 +11,10 @@ interface HistoryState {
   future: Command[];
   canUndo: boolean;
   canRedo: boolean;
-  execute: (cmd: Command) => void;
-  undo: () => void;
-  redo: () => void;
+  isExecuting: boolean;
+  execute: (cmd: Command) => Promise<void>;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
   clear: () => void;
 }
 
@@ -24,39 +25,69 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   future: [],
   canUndo: false,
   canRedo: false,
+  isExecuting: false,
 
-  execute: (cmd: Command) => {
-    cmd.execute();
-    set(state => {
-      const past = [...state.past, cmd].slice(-MAX_HISTORY);
-      return { past, future: [], canUndo: true, canRedo: false };
-    });
+  execute: async (cmd: Command) => {
+    if (get().isExecuting) return;
+    set({ isExecuting: true });
+
+    try {
+      await cmd.execute();
+      set(state => {
+        const past = [...state.past, cmd].slice(-MAX_HISTORY);
+        return { past, future: [], canUndo: true, canRedo: false, isExecuting: false };
+      });
+    } catch (error) {
+      console.error(`[HistoryStore] Command "${cmd.label}" failed:`, error);
+      set({ isExecuting: false });
+      throw error; // Re-throw so callers can handle it
+    }
   },
 
-  undo: () => {
-    const { past } = get();
-    if (past.length === 0) return;
+  undo: async () => {
+    const { past, isExecuting } = get();
+    if (past.length === 0 || isExecuting) return;
+
     const cmd = past[past.length - 1];
-    cmd.undo();
-    set(state => ({
-      past: state.past.slice(0, -1),
-      future: [cmd, ...state.future],
-      canUndo: state.past.length > 1,
-      canRedo: true,
-    }));
+    set({ isExecuting: true });
+
+    try {
+      await cmd.undo();
+      set(state => ({
+        past: state.past.slice(0, -1),
+        future: [cmd, ...state.future],
+        canUndo: state.past.length > 1,
+        canRedo: true,
+        isExecuting: false,
+      }));
+    } catch (error) {
+      console.error(`[HistoryStore] Undo "${cmd.label}" failed:`, error);
+      set({ isExecuting: false });
+      throw error;
+    }
   },
 
-  redo: () => {
-    const { future } = get();
-    if (future.length === 0) return;
+  redo: async () => {
+    const { future, isExecuting } = get();
+    if (future.length === 0 || isExecuting) return;
+
     const cmd = future[0];
-    cmd.execute();
-    set(state => ({
-      past: [...state.past, cmd],
-      future: state.future.slice(1),
-      canUndo: true,
-      canRedo: state.future.length > 1,
-    }));
+    set({ isExecuting: true });
+
+    try {
+      await cmd.execute();
+      set(state => ({
+        past: [...state.past, cmd],
+        future: state.future.slice(1),
+        canUndo: true,
+        canRedo: state.future.length > 1,
+        isExecuting: false,
+      }));
+    } catch (error) {
+      console.error(`[HistoryStore] Redo "${cmd.label}" failed:`, error);
+      set({ isExecuting: false });
+      throw error;
+    }
   },
 
   clear: () => set({ past: [], future: [], canUndo: false, canRedo: false }),

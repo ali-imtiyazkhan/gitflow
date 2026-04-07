@@ -84,7 +84,7 @@ export default function RepoDashboardPage({ params }: PageProps) {
         showActivity ? "pl-80" : "pl-0"
       )}>
         {session?.accessToken ? (
-          <BranchGraphCanvas owner={owner} repo={repo} accessToken={session.accessToken} />
+          <BranchGraphCanvas owner={owner} repo={repo} />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-slate-50/50 dark:bg-slate-950/50">
             <div className="flex flex-col items-center max-w-sm text-center">
