@@ -42,7 +42,7 @@ export function ConflictPanel({ owner, repo }: ConflictPanelProps) {
   };
 
   return (
-    <aside className="flex w-[400px] flex-shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+    <aside className="glass-surface flex w-[400px] flex-shrink-0 flex-col border-l border-gray-200 dark:border-gray-800">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
         <div className="flex items-center gap-2">
@@ -83,35 +83,41 @@ export function ConflictPanel({ owner, repo }: ConflictPanelProps) {
 
       {/* Global Analysis Result */}
       {globalAnalysis && (
-        <div className="mx-4 mt-4 rounded-xl border border-purple-100 bg-purple-50/50 p-4 animate-in slide-in-from-top-2 duration-300">
-           <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-purple-700">
-                 <Sparkles className="h-3.5 w-3.5" />
-                 Merge Impact Summary
-              </div>
-              <span className={clsx(
-                "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase",
-                globalAnalysis.riskLevel === 'high' ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600"
-              )}>
-                {globalAnalysis.riskLevel} Risk
-              </span>
-              <button onClick={() => setGlobalAnalysis(null)} className="text-purple-400 hover:text-purple-600">
-                 <X className="h-3 w-3" />
-              </button>
-           </div>
+        <div className="mx-4 mt-4 rounded-2xl glass-surface glow-purple p-4 relative overflow-hidden animate-in slide-in-from-top-4 duration-700">
+           <div className="absolute -top-6 -right-6 h-24 w-24 rounded-full bg-purple-500/5 blur-2xl" />
            
-           <div className="space-y-2">
-             <p className="text-[11px] leading-relaxed text-purple-900 font-bold">
-                {globalAnalysis.summaryText}
-             </p>
-             <ul className="space-y-1">
-                {globalAnalysis.bullets.map((bullet, i) => (
-                  <li key={i} className="text-[10px] text-purple-800 flex gap-1.5 leading-tight">
-                    <span className="text-purple-400">•</span>
-                    {bullet}
-                  </li>
-                ))}
-             </ul>
+           <div className="relative z-10">
+              <div className="flex items-center justify-between mb-3">
+                 <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 dark:bg-purple-500/20">
+                      <Sparkles className="h-3.5 w-3.5" />
+                    </div>
+                    <span className="text-[11px] font-bold text-purple-900 dark:text-purple-100 uppercase tracking-wide">Merge Impact Analysis</span>
+                 </div>
+                 <div className={clsx(
+                   "px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter shadow-sm",
+                   globalAnalysis.riskLevel === 'high' ? "bg-red-500 text-white" : "bg-brand-primary text-white"
+                 )}>
+                   {globalAnalysis.riskLevel} Risk
+                 </div>
+                 <button onClick={() => setGlobalAnalysis(null)} className="p-1 rounded-full hover:bg-slate-200 transition-colors dark:hover:bg-slate-800">
+                    <X className="h-3 w-3 text-slate-400" />
+                 </button>
+              </div>
+              
+              <div className="space-y-3">
+                <p className="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 font-semibold italic">
+                   "{globalAnalysis.summaryText}"
+                </p>
+                <div className="space-y-2">
+                   {globalAnalysis.bullets.map((bullet, i) => (
+                     <div key={i} className="flex gap-2 group">
+                       <span className="h-1.5 w-1.5 rounded-full bg-purple-400 mt-1.5 shrink-0 group-hover:scale-125 transition-transform" />
+                       <p className="text-[10.5px] text-slate-600 dark:text-slate-400 leading-normal">{bullet}</p>
+                     </div>
+                   ))}
+                </div>
+              </div>
            </div>
         </div>
       )}
@@ -129,9 +135,9 @@ export function ConflictPanel({ owner, repo }: ConflictPanelProps) {
           <span>Resolution progress</span>
           <span>{totalResolved} / {totalConflicts}</span>
         </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+        <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800/50">
           <div
-            className="h-full rounded-full bg-green-500 transition-all"
+            className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-green-600 shadow-[0_0_12px_rgba(16,185,129,0.3)] transition-all duration-1000 ease-out"
             style={{ width: `${totalConflicts ? (totalResolved / totalConflicts) * 100 : 0}%` }}
           />
         </div>
@@ -215,9 +221,9 @@ export function ConflictPanel({ owner, repo }: ConflictPanelProps) {
                 };
                 resolveConflictAction(request);
               }}
-              className="flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-green-500/20 hover:bg-green-700 transition-all w-full active:scale-95"
+              className="flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-4 text-sm font-bold text-white shadow-2xl shadow-slate-900/20 hover:bg-slate-900 hover:shadow-brand-accent/20 transition-all w-full active:scale-95 group dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
             >
-              <CheckCheck className="h-4 w-4" />
+              <CheckCheck className="h-4 w-4 transition-transform group-hover:scale-125 group-hover:-rotate-12" />
               Complete Resolution & Commit
             </button>
           </div>

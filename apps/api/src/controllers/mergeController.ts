@@ -295,7 +295,7 @@ export class MergeController {
 
       const analysis = await this.aiService.analyzeAllConflicts(hunks);
 
-      const response: ApiResponse<{ analysis: string }> = {
+      const response: ApiResponse<{ analysis: AIAnalysis }> = {
         success: true,
         data: {
           analysis
