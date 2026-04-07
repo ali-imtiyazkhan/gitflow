@@ -1,12 +1,49 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import type { ConflictHunk, AISuggestion, StaleBranchReport } from '@gitflow/shared';
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import type { ConflictHunk, AISuggestion, StaleBranchReport, AIAnalysis } from '@gitflow/shared';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
+// ─── Retry Helper ─────────────────────────────────────────────────────────────
+
+/**
+ * Exponential backoff retry for transient AI failures.
+ * Retries up to `maxRetries` times with doubling delay.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2, baseDelayMs = 1000): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const isLastAttempt = attempt === maxRetries;
+      if (isLastAttempt) throw error;
+
+      const delayMs = baseDelayMs * Math.pow(2, attempt);
+      console.warn(`[AIService] Transient failure, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries}):`, error?.message || error);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  throw new Error('withRetry: exhausted retries');
+}
+
+/**
+ * Strips markdown code fences from AI responses.
+ */
+function stripCodeFences(text: string): string {
+  let cleaned = text.trim();
+  if (cleaned.startsWith('```json')) {
+    cleaned = cleaned.replace(/^```json\n?/i, '').replace(/\n?```$/m, '');
+  } else if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```\n?/, '').replace(/\n?```$/m, '');
+  }
+  return cleaned.trim();
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
+
 export class AIService {
   private genAI: GoogleGenerativeAI;
-  private model: any;
+  private model: GenerativeModel;
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -49,20 +86,12 @@ Respond ONLY with valid JSON matching this structure:
 Do not include any explanations outside the JSON block.
 `;
 
-    try {
+    return withRetry(async () => {
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
-      let text = response.text().trim();
-      
-      if (text.startsWith('```json')) {
-         text = text.replace(/^```json\n/i, '').replace(/\n```$/m, '');
-      }
-      
-      return JSON.parse(text);
-    } catch (error) {
-      console.error('AIService Error:', error);
-      throw new Error('Failed to generate AI resolution');
-    }
+      const text = stripCodeFences(response.text());
+      return JSON.parse(text) as AISuggestion;
+    });
   }
 
   /**
@@ -84,9 +113,11 @@ Keep the explanation under 3 sentences.
 `;
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      return response.text().trim();
+      return await withRetry(async () => {
+        const result = await this.model.generateContent(prompt);
+        const response = await result.response;
+        return response.text().trim();
+      });
     } catch (error) {
        console.error('AIService Error:', error);
        return 'Could not generate explanation.';
@@ -112,9 +143,11 @@ Provide a concise (2-3 paragraph) summary of what's happening in this merge, ide
 `;
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      return response.text().trim();
+      return await withRetry(async () => {
+        const result = await this.model.generateContent(prompt);
+        const response = await result.response;
+        return response.text().trim();
+      });
     } catch (error) {
        console.error('AIService Error:', error);
        return 'Failed to analyze all conflicts.';
@@ -140,9 +173,11 @@ Keep the message concise but descriptive. No quotes, no preamble.
 `;
 
     try {
-       const result = await this.model.generateContent(prompt);
-       const response = await result.response;
-       return response.text().trim();
+       return await withRetry(async () => {
+         const result = await this.model.generateContent(prompt);
+         const response = await result.response;
+         return response.text().trim();
+       });
     } catch (error) {
        console.error('AIService Error:', error);
        return 'fix: resolved merge conflicts';
@@ -152,7 +187,7 @@ Keep the message concise but descriptive. No quotes, no preamble.
   /**
    * Analyzes branch metadata to identify stale/safe-to-delete branches.
    */
-  async analyzeBranchHealth(branches: any[]): Promise<StaleBranchReport[]> {
+  async analyzeBranchHealth(branches: { name: string; lastCommitAt: string; aheadBy: number; behindBy: number; type: string }[]): Promise<StaleBranchReport[]> {
     const branchInfo = branches.map(b => ({
        name: b.name,
        lastCommitAt: b.lastCommitAt,
@@ -180,11 +215,12 @@ Provide a JSON array response:
 `;
 
     try {
-       const result = await this.model.generateContent(prompt);
-       const response = await result.response;
-       let text = response.text().trim();
-       if (text.startsWith('```json')) text = text.replace(/^```json\n/i, '').replace(/\n```$/m, '');
-       return JSON.parse(text);
+       return await withRetry(async () => {
+         const result = await this.model.generateContent(prompt);
+         const response = await result.response;
+         const text = stripCodeFences(response.text());
+         return JSON.parse(text) as StaleBranchReport[];
+       });
     } catch (error) {
        console.error('AIService Error:', error);
        return [];
@@ -194,7 +230,7 @@ Provide a JSON array response:
   /**
    * Generates a code review summary for a diff.
    */
-  async generateDiffSummary(diff: string): Promise<any> {
+  async generateDiffSummary(diff: string): Promise<AIAnalysis> {
     const prompt = `
 Summarize the following code changes into a few bullet points for a senior engineer.
 Respond ONLY with valid JSON:
@@ -209,11 +245,12 @@ ${diff.slice(0, 5000)}
 `;
 
     try {
-       const result = await this.model.generateContent(prompt);
-       const response = await result.response;
-       let text = response.text().trim();
-       if (text.startsWith('```json')) text = text.replace(/^```json\n/i, '').replace(/\n```$/m, '');
-       return JSON.parse(text);
+       return await withRetry(async () => {
+         const result = await this.model.generateContent(prompt);
+         const response = await result.response;
+         const text = stripCodeFences(response.text());
+         return JSON.parse(text) as AIAnalysis;
+       });
     } catch (error) {
        console.error('AIService Error:', error);
        return { 

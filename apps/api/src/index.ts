@@ -12,6 +12,7 @@ import approvalRouter from '@/routes/approvalRoutes';
 import webhookRouter from '@/routes/webhookRoutes';
 import prRouter from '@/routes/prRoutes';
 import { ApiError } from './utils/apiError';
+import { UnauthorizedError } from './utils/apiError';
 import { registerSocketHandlers } from './services/socketHandlers';
 
 // Load environment variables
@@ -44,7 +45,30 @@ app.use(cors({
   credentials: true,
 }));
 app.use(morgan('dev'));
-app.use(express.json());
+
+// Parse JSON with raw body preservation for webhook signature verification
+app.use(express.json({
+  verify: (req: any, _res, buf) => {
+    // Store the raw body buffer on the request for HMAC verification
+    req.rawBody = buf;
+  },
+}));
+
+// ─── Auth Middleware ──────────────────────────────────────────────────────────
+
+/**
+ * Extract and validate Bearer token from Authorization header.
+ * Attaches `req.accessToken` for downstream handlers.
+ * Applied to all /repos routes. Webhook routes are excluded.
+ */
+function authMiddleware(req: express.Request, _res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return next(new UnauthorizedError('Missing or invalid authorization header'));
+  }
+  (req as any).accessToken = authHeader.split(' ')[1];
+  next();
+}
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 
@@ -54,12 +78,17 @@ app.get('/health', (req, res) => {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-app.use(`${API_BASE_PATH}/repos`, repoRoutes);
-app.use(`${API_BASE_PATH}/repos`, mergeRoutes);
-app.use(`${API_BASE_PATH}/repos`, approvalRouter);
-app.use(`${API_BASE_PATH}/repos`, prRouter);
+// Protected routes — require Bearer token
+app.use(`${API_BASE_PATH}/repos`, authMiddleware, repoRoutes);
+app.use(`${API_BASE_PATH}/repos`, authMiddleware, mergeRoutes);
+app.use(`${API_BASE_PATH}/repos`, authMiddleware, approvalRouter);
+app.use(`${API_BASE_PATH}/repos`, authMiddleware, prRouter);
+
+// Webhook routes — no auth required (uses signature verification instead)
 app.use(`${API_BASE_PATH}/webhooks`, webhookRouter);
-app.use(`${API_BASE_PATH}/repos`, webhookRouter); // Also mount events here
+
+// Event replay/history routes (under /repos, needs auth)
+app.use(`${API_BASE_PATH}/repos`, authMiddleware, webhookRouter);
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
 

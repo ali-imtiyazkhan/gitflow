@@ -5,7 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 export class MergeService {
   /**
    * Attempts to merge a head branch into a base branch.
-   * If conflicts occur, it returns a detailed MergeConflict object.
+   * If conflicts occur, it returns a detailed MergeConflict object
+   * with real file content fetched from both branches.
    */
   async performMerge(
     githubService: GitHubService,
@@ -20,48 +21,73 @@ export class MergeService {
     } catch (err: any) {
        // 409 Conflict: Merge cannot be performed automatically
        if (err.status === 409) {
-          // 2. Compare branches to identify changed files and simulate hunks
+          // 2. Compare branches to identify changed files
           const comparison = await githubService.compareBranches(owner, repo, request.targetBranch, request.sourceBranch);
           const conflictingFiles: ConflictFile[] = [];
 
           if (comparison.files && comparison.files.length > 0) {
-             // For every modified file, we simulate a conflict hunk
-             for (const file of comparison.files) {
-                if (file.status === 'modified') {
-                   const hunks: ConflictHunk[] = [
-                      {
-                        id: uuidv4(),
-                        filePath: file.filename,
-                        lineStart: 1, // Mocked line numbers
-                        lineEnd: 10,
-                        oursContent: '// Local changes in ' + request.targetBranch,
-                        theirsContent: file.patch || '// Incoming changes in ' + request.sourceBranch,
-                        resolved: false,
-                      }
-                   ];
+             // Fetch real file content from both branches for each modified file
+             const filePromises = comparison.files
+               .filter(file => file.status === 'modified')
+               .map(async (file) => {
+                 let oursContent: string;
+                 let theirsContent: string;
 
-                   conflictingFiles.push({
-                      path: file.filename,
-                      hunks,
-                      totalConflicts: hunks.length,
-                      resolvedConflicts: 0,
-                   });
-                }
+                 try {
+                   oursContent = await githubService.getFileContent(owner, repo, file.filename, request.targetBranch);
+                 } catch {
+                   oursContent = `// Unable to fetch content from ${request.targetBranch}`;
+                 }
+
+                 try {
+                   theirsContent = await githubService.getFileContent(owner, repo, file.filename, request.sourceBranch);
+                 } catch {
+                   theirsContent = `// Unable to fetch content from ${request.sourceBranch}`;
+                 }
+
+                 const hunks: ConflictHunk[] = [
+                   {
+                     id: uuidv4(),
+                     filePath: file.filename,
+                     lineStart: 1,
+                     lineEnd: Math.max(
+                       oursContent.split('\n').length,
+                       theirsContent.split('\n').length
+                     ),
+                     oursContent,
+                     theirsContent,
+                     resolved: false,
+                   }
+                 ];
+
+                 return {
+                   path: file.filename,
+                   hunks,
+                   totalConflicts: hunks.length,
+                   resolvedConflicts: 0,
+                 } as ConflictFile;
+               });
+
+             const results = await Promise.allSettled(filePromises);
+             for (const result of results) {
+               if (result.status === 'fulfilled') {
+                 conflictingFiles.push(result.value);
+               }
              }
           }
 
-          // If no files were modified (unlikely on 409), create at least one entry
+          // If no files were gathered, provide a fallback entry
           if (conflictingFiles.length === 0) {
              conflictingFiles.push({
-                path: 'README.md',
+                path: 'unknown',
                 hunks: [
                    {
                       id: uuidv4(),
-                      filePath: 'README.md',
+                      filePath: 'unknown',
                       lineStart: 0,
                       lineEnd: 0,
-                      oursContent: '# Original Content',
-                      theirsContent: '# Conflicting Content',
+                      oursContent: '// Could not determine conflicting content',
+                      theirsContent: '// Could not determine conflicting content',
                       resolved: false,
                    }
                 ],
@@ -102,13 +128,12 @@ export class MergeService {
   ): Promise<string> {
     const commitMessage = `Merge branch '${sourceBranch}' into ${targetBranch} (Conflict Resolved)`;
     
-    // Create the commit on the SOURCE branch (the one we are merging FROM into the target)
-    // Wait, usually we merge SOURCE into TARGET. So the conflict is resolved on TARGET.
-    // GitHub's merge API attempts to merge HEAD into BASE.
-    // If it's a PR, the merging branch is the source.
-    // In our case, we are merging `head` into `base`. So we should commit to `base` (targetBranch) or a temporary branch.
-    // Let's assume we commit to the target branch directly for now, as is typical for a conflict resolution commit.
-    
-    return await githubService.createCommit(owner, repo, targetBranch, commitMessage, resolutions.map(r => ({ path: r.filePath, content: r.content })));
+    return await githubService.createCommit(
+      owner,
+      repo,
+      targetBranch,
+      commitMessage,
+      resolutions.map(r => ({ path: r.filePath, content: r.content }))
+    );
   }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useEffect, useState } from 'react';
+import { useCallback, useMemo, useEffect, useState, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -14,7 +14,7 @@ import {
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { AlertCircle, Loader2, GitBranch, GitCommit, RotateCcw } from 'lucide-react';
+import { AlertCircle, Loader2, GitBranch, GitCommit, RotateCcw, X, CheckCircle, AlertTriangle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { BranchNode } from './BranchNode';
 import { CommitNode } from './CommitNode';
@@ -32,10 +32,84 @@ const NODE_TYPES = {
   commit: CommitNode
 };
 
+// ─── Toast Notification Component ──────────────────────────────────────────
+interface Toast {
+  id: number;
+  type: 'success' | 'error' | 'info';
+  message: string;
+}
+
+function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
+  return (
+    <div className="fixed top-6 right-6 z-50 flex flex-col gap-2">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={clsx(
+            'flex items-center gap-3 rounded-2xl px-5 py-3 text-sm font-medium shadow-2xl backdrop-blur-xl border animate-in slide-in-from-right-5 fade-in duration-300',
+            t.type === 'success' && 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400',
+            t.type === 'error' && 'bg-red-500/10 border-red-500/20 text-red-400',
+            t.type === 'info' && 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+          )}
+        >
+          {t.type === 'success' && <CheckCircle className="h-4 w-4 shrink-0" />}
+          {t.type === 'error' && <AlertTriangle className="h-4 w-4 shrink-0" />}
+          {t.type === 'info' && <AlertCircle className="h-4 w-4 shrink-0" />}
+          <span>{t.message}</span>
+          <button onClick={() => onDismiss(t.id)} className="ml-2 opacity-50 hover:opacity-100 transition-opacity">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Confirmation Modal Component ──────────────────────────────────────────
+interface ConfirmModalProps {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  confirmVariant?: 'danger' | 'primary';
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function ConfirmModal({ title, message, confirmLabel = 'Confirm', confirmVariant = 'primary', onConfirm, onCancel }: ConfirmModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="glass-surface rounded-3xl p-6 shadow-2xl max-w-md w-full mx-4 animate-in zoom-in-95 duration-200">
+        <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">{title}</h3>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className={clsx(
+              'rounded-xl px-4 py-2 text-sm font-bold text-white transition-all active:scale-95',
+              confirmVariant === 'danger'
+                ? 'bg-red-500 hover:bg-red-600 shadow-lg shadow-red-500/20'
+                : 'bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20'
+            )}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────
+
 interface BranchGraphCanvasProps {
   owner: string;
   repo: string;
-  accessToken: string;
 }
 
 export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
@@ -54,6 +128,35 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
 
   // Merge Preview State
   const [pendingMerge, setPendingMerge] = useState<{ source: string, target: string } | null>(null);
+
+  // Toast notification state
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastId = useRef(0);
+
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalProps | null>(null);
+
+  const showToast = useCallback((type: Toast['type'], message: string) => {
+    const id = ++toastId.current;
+    setToasts(prev => [...prev, { id, type, message }]);
+    // Auto-dismiss after 4 seconds
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const confirm = useCallback((opts: Omit<ConfirmModalProps, 'onConfirm' | 'onCancel'> & { onConfirm: () => void }) => {
+    setConfirmModal({
+      ...opts,
+      onCancel: () => setConfirmModal(null),
+      onConfirm: () => {
+        setConfirmModal(null);
+        opts.onConfirm();
+      },
+    });
+  }, []);
 
   // Listen for real-time updates
   const socket = useSocket(`${owner}/${repo}`);
@@ -89,20 +192,26 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
     return () => clearInterval(interval);
   }, [isPlaying]);
 
+  // Stable delete handler — only depends on owner+repo (primitives) + refresh (stable from useCallback in hook)
   const handleDeleteBranch = useCallback(
     async (branchName: string) => {
-      const confirmMessage = `Are you sure you want to permanently delete the branch "${branchName}"? This action cannot be undone on GitHub.`;
-
-      if (window.confirm(confirmMessage)) {
-        try {
-          await deleteBranch(owner, repo, branchName);
-          refresh(); // Refresh graph to remove the node
-        } catch (err: any) {
-          alert(`Failed to delete branch: ${err.message}`);
-        }
-      }
+      confirm({
+        title: 'Delete Branch',
+        message: `Are you sure you want to permanently delete the branch "${branchName}"? This action cannot be undone on GitHub.`,
+        confirmLabel: 'Delete',
+        confirmVariant: 'danger',
+        onConfirm: async () => {
+          try {
+            await deleteBranch(owner, repo, branchName);
+            showToast('success', `Branch "${branchName}" deleted successfully`);
+            refresh();
+          } catch (err: any) {
+            showToast('error', `Failed to delete branch: ${err.message}`);
+          }
+        },
+      });
     },
-    [owner, repo, refresh]
+    [owner, repo, refresh, confirm, showToast]
   );
 
   // Convert domain branches → React Flow nodes
@@ -271,8 +380,6 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
       const targetNode = nodes.find((n) => (n.data as any).isTarget);
 
       if (targetNode) {
-        const sourceId = node.id;
-        const targetId = targetNode.id;
         const sourceType = node.type;
         const targetType = targetNode.type;
 
@@ -281,23 +388,28 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
           const sourceMsg = (node.data as any).message;
           const targetMsg = (targetNode.data as any).message;
 
-          if (window.confirm(`Do you want to rebase commit "${sourceMsg}" onto "${targetMsg}"?`)) {
-             try {
-               await performRebase(owner, repo, {
-                 sourceBranch: (node.data as any).branchName || 'unknown', // We might need to track which branch a commit belongs to
-                 targetBranch: (targetNode.data as any).branchName || 'unknown',
-                 commits: [node.id] // Just replaying one commit for now
-               });
-               refresh();
-               alert('Rebase successful!');
-             } catch (err: any) {
-               alert(`Rebase failed: ${err.message}`);
-             }
-          }
+          confirm({
+            title: 'Rebase Commit',
+            message: `Do you want to rebase commit "${sourceMsg}" onto "${targetMsg}"?`,
+            confirmLabel: 'Rebase',
+            onConfirm: async () => {
+              try {
+                await performRebase(owner, repo, {
+                  sourceBranch: (node.data as any).branchName || 'unknown',
+                  targetBranch: (targetNode.data as any).branchName || 'unknown',
+                  commits: [node.id]
+                });
+                showToast('success', 'Rebase successful!');
+                refresh();
+              } catch (err: any) {
+                showToast('error', `Rebase failed: ${err.message}`);
+              }
+            },
+          });
         } 
         // ─── Standard Merge Logic (Branch View) ──────────────────────────────
         else if (!isRebaseMode && sourceType === 'branch' && targetType === 'branch') {
-          setPendingMerge({ source: sourceId, target: targetId });
+          setPendingMerge({ source: node.id, target: targetNode.id });
         }
       }
 
@@ -309,7 +421,7 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
         }))
       );
     },
-    [nodes, setNodes, updateNodePosition, triggerMerge, isRebaseMode]
+    [nodes, setNodes, updateNodePosition, isRebaseMode, owner, repo, refresh, confirm, showToast]
   );
 
   const onNodeClick = useCallback(
@@ -340,6 +452,12 @@ export function BranchGraphCanvas({ owner, repo }: BranchGraphCanvasProps) {
 
   return (
     <div className="flex-1 overflow-hidden h-full w-full relative">
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* Confirmation Modal */}
+      {confirmModal && <ConfirmModal {...confirmModal} />}
+
       {/* View Switcher Controls */}
       <div className="absolute top-6 left-6 z-10 flex gap-1 rounded-2xl glass-surface p-1.5 shadow-2xl">
         <button
